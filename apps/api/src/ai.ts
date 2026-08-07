@@ -212,7 +212,7 @@ export async function callMiMoFree(
       'X-OpenRouter-Free': 'true',
     },
     body: JSON.stringify({
-      model: 'xiaomi/mimo-v2-pro',
+      model: model || 'xiaomi/mimo-v2.5-pro',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
