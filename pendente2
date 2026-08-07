@@ -1,0 +1,20 @@
+agora faça com que o agent se contextualize de acordo a pergunta da pessoa. por exemplo se a pessoa perguntar sobre planos e duvidas sobre o aplicativo
+o agent vai preferir abrir arquivo x para saber responder as perguntas.
+vou colocar varias opcoes na mesa para o agent escolher. cada opcao na mesa tera seus detalhes e caracteristicas. para saber guiar o agent
+por exemplo, isso instrui sobre o aplicativo. isso sobre dieta, isso sobre o aplicativo.
+para evitar gastar muito token, e ficar enchendo a memoria do agent, o agent que vai escolher a opcao que vai abrir.
+se quiser recomendar pra mim algo melhor que se possa fazer nesse cenario, eu posso estar escolhendo, eu humano
+
+
+
+programacao
+seja organizado
+seja um arquiteto de software, nao somente um programador.
+use principios de clean code, design patterns, etc.
+use principios de seguranca, etc.
+use principios de performance, etc.
+use principios de testes, etc.
+use principios de documentacao, etc.
+use principios de refatoracao, etc.
+use principios de refatoracao, etc.
+use boas praticas de programacao, etc.

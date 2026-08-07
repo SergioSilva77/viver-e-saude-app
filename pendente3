@@ -1,0 +1,22 @@
+quando a pessoa pagar uma assinatura:
+1. retirar aquele bloco de assinatura, depois que assinar um nivel
+2. direcionar a pessoa para uma tela especial de cadastro: colocando email, senha, etc... (ainda nao funcional)
+3. após esse cadastro depois de salvar, matar a sessão da pessoa pra ela fazer Login
+4. a pessoa ainda nao fez login, mas clicou em assinar. nesse momento, ela não é direcionada para a stripe, mas sim dentro do aplicativo e o aplicativo desboloqueia o nivel para ela sendo que nao deveria... isso é um falso positivo. a pessoa clicou em assinar e desbloqueou o nivel sem passar pela stripe na tela do login onde tem usuario e senha.
+5. confira
+
+
+
+
+
+programacao
+seja organizado
+seja um arquiteto de software, nao somente um programador.
+use principios de clean code, design patterns, etc.
+use principios de seguranca, etc.
+use principios de performance, etc.
+use principios de testes, etc.
+use principios de documentacao, etc.
+use principios de refatoracao, etc.
+use principios de refatoracao, etc.
+use boas praticas de programacao, etc.

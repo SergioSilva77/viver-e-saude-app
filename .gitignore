@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env*.local
+*.log
+.ai-config.json
+.stripe-config.json
+backups/
+.DS_Store
+Thumbs.db
+*.bak
+ssh.txt
+.env-test.env

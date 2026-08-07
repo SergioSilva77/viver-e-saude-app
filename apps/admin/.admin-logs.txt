@@ -1,0 +1,2 @@
+[2026-08-04T17:57:28.908Z] WARN [AdminLogin]: Tentativa de login falhou. Tentativas: 1. Bloqueado: false.
+[2026-08-04T17:59:32.632Z] WARN [AdminLogin]: Tentativa de login falhou. Tentativas: 2. Bloqueado: false.

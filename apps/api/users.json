@@ -1,0 +1,41 @@
+[
+  {
+    "fullName": "SERGIO SOUZA DA SILVA",
+    "planIds": [
+      "nivel1"
+    ],
+    "password": "12345678",
+    "id": "stripe_ImLNgWVwbx2n",
+    "email": "sergio.parky@gmail.com"
+  },
+  {
+    "fullName": "Sérgio",
+    "planIds": [
+      "nivel1",
+      "nivel2"
+    ],
+    "password": "12345678",
+    "id": "stripe_x351JwGyeA6T",
+    "email": "ssergiosilva44@gmail.com",
+    "planExpiresAt": {
+      "nivel2": "2026-05-29T13:13:47.736Z"
+    },
+    "subscriptionIds": {
+      "nivel2": "sub_1TRXvwRNKliJa0dQqBL08Dce"
+    },
+    "planCancelledAt": {
+      "nivel2": "2026-05-29T13:13:41.000Z"
+    }
+  },
+  {
+    "fullName": "",
+    "planIds": [
+      "nivel3",
+      "nivel2",
+      "nivel1"
+    ],
+    "password": "12345678",
+    "id": "1776889356056",
+    "email": "admin@admin.com"
+  }
+]

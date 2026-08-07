@@ -1,0 +1,113 @@
+crie um aplicativo de acordo com as informações abaixo:
+vamos usar supabase
+
+nosso aplicativo irá funcionar com frontend, backend e database.
+use frameworks necessarios
+
+nosso aplicativo deverá obrigatoriamente ser responsivo, já que ira ser em web. mas o foco sera em mobile.
+
+vamos usar nodejs no backend.
+vamos usar react no frontend
+vamos usar bootstrap no frontend
+vamos usar w3 no frontend
+
+----------
+
+o nome do aplicativo é 'Viver & Saúde'
+logo, o tema tem que ser muito suave, simples e tranquilo de mexer
+nao quero nada feio, nada chatinho, nada que pareça ser feito por um iniciante.
+
+---------
+
+vou simular pra vc como eu quero que os componentes basicos fiquem
+
+topo (com notificacoes)
+meio
+botoes abaixo
+
+-----------
+
+
+botoes inferiores:
+Inicio com icone de casa
+MeuGuardião: é o botão que vai para o chat para falar com a inteligencia artificial
+receitas
+comunidade
+conta
+
+cada botao deve ter um icone e nao texto
+
+
+
+
+-----------
+LOGIN E CADASTRO:
+regras do aplicativo:
+login e cadastro devem ser feitos com email e senha e recuperação de senha.
+
+TELA INICIAL:
+Cadastro único – Nível 1 – 29,90
+beneficios:
+Desbloquear IA (limite 24h) 
+(30 min com consultor gratuito) (apenas 1 vez
+observacao: essa parte é importante, pois quando o usuario fizer o cadastro pela primeira vez, ele deve ser redirecionado para a tela de pagamento informando o valor e os beneficios.
+isso vai ser uma unica vez, quando ele pagar, ele sempre ira poder fazer o login com sucesso. mas se cadastrou sem pagar, ele nao ira poder fazer o login. mas as informacoes devem ser salvas no banco de dados
+
+Assinatura Mensal – Nível 2 – 18,07
+beneficios:
+(liberação do meuguardião 100%)
+70 receitas naturas +ebook
+Bate papo gratuito toda segunda
+Botão WhatsApp (consultoria gratuita)
+
+Nível 3 – 79,90
+beneficios:
+Treinamento gratuito (máx. 30 min)
+Liberado nível 1 e 2
+Grupos exclusivos WhatsApp e Telegram
+Atendimento personalizado, via videoconferência com profissionais da área com atendimento agendado (0,01 centavo por segundo)
+Acesso à Fábrica com descontos e indicações à plataforma (Mercado Orgânicos de Produtos Atlântica) 
+
+--------
+
+TELA COMUNIDADE:
+Grupos exclusivos WhatsApp e Telegram. ira obter os links dos grupos
+
+TELA RECEITAS:
+baixar ebook
+protocolos de orientacao, contendo produtos recomendados para cada tipo de problema
+cadastro de receitas somente pelo administrador de forma facil e rapida, tambem posso fazer upload de arquivo de receita em massa
+
+TELA conta
+perfil, historico de pagamento, etc, cancelamento de assinatura, etc
+cadastro de historico familiar, para orientacao de alimentacao, etc, a ia ira usar esses dados para orientar o usuario
+informacoes sobre idade, peso, altura, tipo sanguineo, etc
+
+PAINEL ADMINISTRADOR FORA DO APLICATIVO:
+login e senha para acessar o painel administrativo fora do aplicativo
+aqui poderei ver todos os usuarios, receitas, etc
+poderei fazer upload de receitas em massa
+poderei fazer upload de protocolos de orientacao em massa
+poderei fazer upload de grupos de whatsapp e telegram em massa
+poderei fazer upload de historico familiar em massa
+poderei fazer upload de informacoes sobre idade, peso, altura, tipo sanguineo em massa
+usuarios potenciais, para poder contatar e oferecer o plano de assinatura
+poderei enviar mensagens para todos os usuarios
+poderei conceder acesso a plano de assinatura a usuarios potenciais para periodo de teste ou por tempo determinado
+
+
+
+assegure-se de deixar pronto futuramente pagamentos com stripe, webhooks, etc.
+deixe pronto para poder integrar a ia do gemini com o aplicativo. 
+
+programacao
+seja um arquiteto de software, nao somente um programador.
+use principios de clean code, design patterns, etc.
+use principios de seguranca, etc.
+use principios de performance, etc.
+use principios de testes, etc.
+use principios de documentacao, etc.
+use principios de refatoracao, etc.
+use principios de refatoracao, etc.
+use boas praticas de programacao, etc.
+

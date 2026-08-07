@@ -1,0 +1,21 @@
+{
+  "name": "viver-saude-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo do aplicativo Viver & Saúde.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @viver-saude/shared && npm run build --workspace @viver-saude/api && npm run build --workspace @viver-saude/web && npm run build --workspace @viver-saude/admin",
+    "dev:web": "npm run dev --workspace @viver-saude/web",
+    "dev:admin": "npm run dev --workspace @viver-saude/admin",
+    "dev:api": "npm run dev --workspace @viver-saude/api",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

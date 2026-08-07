@@ -1,0 +1,265 @@
+===============================================================
+  VIVER & SAÚDE — Tutorial de Instalação e Execução
+===============================================================
+
+Este tutorial explica como configurar e rodar o projeto
+Viver & Saúde na sua máquina local (Windows).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. PRÉ-REQUISITOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Instale antes de começar:
+
+  • Node.js 22+ (recomendado: v24)
+    Download: https://nodejs.org/
+
+  • Docker Desktop
+    Download: https://www.docker.com/products/docker-desktop/
+
+  • Gerenciador de processos PM2 (instalar globalmente):
+    npm install -g pm2
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2. CLONAR E INSTALAR DEPENDÊNCIAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Clonar o repositório
+  git clone https://github.com/SergioSilva77/viver-e-saude-app.git
+
+  # Entrar na pasta do projeto
+  cd viver-e-saude-app
+
+  # Instalar todas as dependências (monorepo)
+  npm install
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3. BANCO DE DADOS (PostgreSQL no Docker)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Subir o container PostgreSQL
+  docker compose up -d
+
+  # Verificar se o container está rodando
+  docker ps
+
+  # Criar as tabelas (roda uma única vez)
+  docker exec -i viver-saude-db psql -U postgres -d viversaude < init.sql
+
+  # Verificar tabelas criadas
+  docker exec viver-saude-db psql -U postgres -d viversaude -c "\dt"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  4. ARQUIVOS DE CONFIGURAÇÃO (.env)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Crie os arquivos .env em cada pasta de app:
+
+  --- apps/api/.env ---
+  PORT=4000
+  DATABASE_URL=postgres://postgres:postgres@localhost:5432/viversaude
+  ADMIN_API_SECRET=vs-admin-dev
+  APP_URL=http://localhost:5173
+  ADMIN_URL=http://localhost:5174
+
+  --- apps/web/.env ---
+  (nenhuma variável necessária para funcionamento local)
+
+  --- apps/admin/.env ---
+  VITE_ADMIN_TOKEN=vs-admin-dev
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  5. INICIAR OS SERVIÇOS (PM2)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Criar o ecosystem.config.js (já existe na raiz)
+  # Ele sobe 3 serviços: api, web, admin
+
+  # Iniciar tudo
+  pm2 start ecosystem.config.js
+
+  # Ver status dos processos
+  pm2 list
+
+  # Ver logs em tempo real
+  pm2 logs
+
+  # Logs de um serviço específico
+  pm2 logs viver-api
+  pm2 logs viver-web
+  pm2 logs viver-admin
+
+  # Reiniciar após alterações de código
+  pm2 restart viver-api
+  pm2 restart viver-web
+  pm2 restart viver-admin
+
+  # Parar tudo
+  pm2 stop all
+
+  # Remover do PM2
+  pm2 delete all
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  6. PORTAS E URLs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Serviço      Porta    URL
+  ─────────────────────────────────────
+  API          4000     http://localhost:4000
+  Web (app)    5173     http://localhost:5173
+  Admin        5174     http://localhost:5174
+  PostgreSQL   5432     localhost:5432
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  7. CONFIGURAR IA (MeuGuardião)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para ativar o chat com IA:
+
+  1. Acesse o painel admin: http://localhost:5174
+  2. Login: admin@viversaude.com / admin123456
+  3. Vá em "Inteligência Artificial"
+  4. Escolha um provedor:
+     - Anthropic Claude (precisa de chave API)
+     - Google Gemini (precisa de chave API)
+     - Xiaomi MiMo Pro (precisa de chave OpenRouter)
+     - Xiaomi MiMo Free (gratuito, precisa de chave OpenRouter)
+  5. Cole a chave de API
+  6. Selecione o modelo
+  7. Clique "Salvar configurações"
+
+  A IA fica configurada no arquivo .ai-config.json na raiz.
+  NÃO precisa reiniciar o servidor ao mudar pelo painel admin.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  8. CRIAR USUÁRIOS NO ADMIN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Acesse http://localhost:5174
+  2. Login com as credenciais admin
+  3. Clique em "Criar usuário"
+  4. Preencha nome, email e senha (mín. 8 caracteres)
+  5. Selecione o plano (Nível 1, 2 ou 3)
+  6. Clique "Criar usuário"
+
+  O usuário criado pode logar no app web (http://localhost:5173).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  9. COMANDOS ÚTEIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Verificar tipos TypeScript (API)
+  cd apps/api && npx tsc --noEmit
+
+  # Verificar tipos TypeScript (Admin)
+  cd apps/admin && npx tsc --noEmit
+
+  # Verificar tipos TypeScript (Web)
+  cd apps/web && npx tsc --noEmit
+
+  # Acessar o banco de dados diretamente
+  docker exec -it viver-saude-db psql -U postgres -d viversaude
+
+  # Listar tabelas no banco
+  \dt
+
+  # Ver dados de uma tabela
+  SELECT * FROM users;
+
+  # Sair do psql
+  \q
+
+  # Parar e limpar tudo (cuidado!)
+  pm2 stop all
+  pm2 delete all
+  docker compose down
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  10. SOLUÇÃO DE PROBLEMAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ERRO: "Cannot find module" ou dependência faltando
+  → Rode: npm install
+
+  ERRO: "connect ECONNREFUSED 127.0.0.1:5432"
+  → O Docker não está rodando. Rode: docker compose up -d
+
+  ERRO: "relation does not exist" no banco
+  → As tabelas não foram criadas. Rode o init.sql (passo 3)
+
+  ERRO: Tela preta no admin ao clicar em IA
+  → Limpe o localStorage do navegador:
+    F12 → Application → Local Storage → delete vs_admin_settings
+
+  ERRO: "authentication_error" na API de IA
+  → Chave de API inválida. Verifique no painel admin.
+
+  ERRO: Usuário não consegue logar no app
+  → Crie o usuário primeiro no painel admin (passo 8)
+
+  Para restaurar o visual original (após alterações de CSS):
+  → Os backups estão em: C:\viver-saude\backups\
+  → Copie os arquivos .bak de volta para as pastas dos apps
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  11. ESTRUTURA DO PROJETO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  viver-saude/
+  ├── apps/
+  │   ├── api/              ← Backend (Express + PostgreSQL)
+  │   │   └── src/
+  │   │       ├── server.ts     ← Rotas principais
+  │   │       ├── ai.ts         ← Provedores de IA
+  │   │       ├── config.ts     ← Configurações
+  │   │       ├── db.ts         ← Conexão PostgreSQL
+  │   │       ├── userStore.ts  ← CRUD de usuários
+  │   │       ├── chatStore.ts  ← CRUD de conversas
+  │   │       └── ...
+  │   ├── web/              ← App do usuário (React)
+  │   │   └── src/
+  │   │       ├── App.tsx       ← Tela principal
+  │   │       ├── App.css       ← Estilos
+  │   │       └── guardiao/     ← Chat com IA
+  │   └── admin/            ← Painel administrativo (React)
+  │       └── src/
+  │           ├── App.tsx
+  │           ├── App.css
+  │           └── settings/     ← Configurações de IA
+  ├── packages/
+  │   └── shared/           ← Tipos e dados compartilhados
+  ├── docker-compose.yml    ← Container PostgreSQL
+  ├── init.sql              ← Criação das tabelas
+  ├── ecosystem.config.js   ← Configuração PM2
+  └── backups/              ← Backups dos arquivos CSS originais
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CREDENCIAIS PADRÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Admin panel:
+    Email:    admin@viversaude.com
+    Senha:    admin123456
+
+  Banco de dados:
+    Host:     localhost
+    Porta:    5432
+    Database: viversaude
+    User:     postgres
+    Senha:    postgres
+
+  Admin API token:
+    vs-admin-dev

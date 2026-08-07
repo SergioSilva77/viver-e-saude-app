@@ -1,0 +1,212 @@
+{
+  "quota": 200000,
+  "records": [
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-04-22T20:30:34.303Z",
+      "inputTokens": 582,
+      "outputTokens": 441,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-04-22T20:35:03.083Z",
+      "inputTokens": 14277,
+      "outputTokens": 924,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-23T07:52:12.771Z",
+      "inputTokens": 13784,
+      "outputTokens": 508,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-04-23T20:09:21.320Z",
+      "inputTokens": 13797,
+      "outputTokens": 989,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-23T21:37:11.668Z",
+      "inputTokens": 13805,
+      "outputTokens": 1024,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-23T21:42:19.712Z",
+      "inputTokens": 13818,
+      "outputTokens": 936,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-27T20:32:03.034Z",
+      "inputTokens": 14799,
+      "outputTokens": 1024,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-27T20:40:25.375Z",
+      "inputTokens": 15835,
+      "outputTokens": 187,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-27T20:40:43.744Z",
+      "inputTokens": 16033,
+      "outputTokens": 261,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-27T20:41:11.672Z",
+      "inputTokens": 16304,
+      "outputTokens": 267,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-04-27T20:41:37.869Z",
+      "inputTokens": 16590,
+      "outputTokens": 438,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-04-28T13:57:50.140Z",
+      "inputTokens": 14763,
+      "outputTokens": 1024,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-04-28T14:43:19.645Z",
+      "inputTokens": 15801,
+      "outputTokens": 1024,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-05-14T17:46:22.481Z",
+      "inputTokens": 13773,
+      "outputTokens": 145,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-05-14T20:39:44.363Z",
+      "inputTokens": 14645,
+      "outputTokens": 539,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-05-14T20:41:04.092Z",
+      "inputTokens": 15204,
+      "outputTokens": 431,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "anonymous",
+      "userEmail": "anonymous",
+      "date": "2026-05-14T20:42:24.964Z",
+      "inputTokens": 2422,
+      "outputTokens": 438,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-05-15T18:08:35.114Z",
+      "inputTokens": 14498,
+      "outputTokens": 397,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "stripe_ImLNgWVwbx2n",
+      "userEmail": "sergio.parky@gmail.com",
+      "date": "2026-05-20T13:42:28.146Z",
+      "inputTokens": 14490,
+      "outputTokens": 769,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-05-20T19:55:34.977Z",
+      "inputTokens": 14487,
+      "outputTokens": 456,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-05-27T11:01:52.535Z",
+      "inputTokens": 13778,
+      "outputTokens": 714,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-06-02T16:02:54.749Z",
+      "inputTokens": 14490,
+      "outputTokens": 507,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    },
+    {
+      "userId": "1776889356056",
+      "userEmail": "admin@admin.com",
+      "date": "2026-06-05T20:29:35.022Z",
+      "inputTokens": 15217,
+      "outputTokens": 647,
+      "provider": "claude",
+      "model": "claude-sonnet-4-5"
+    }
+  ]
+}

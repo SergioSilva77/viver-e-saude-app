@@ -1,0 +1,15 @@
+[
+  {
+    "id": "moinwkwayezdbw",
+    "title": "Suco verde",
+    "description": "Saude",
+    "content": "#test\n1. kkk",
+    "audience": [
+      "nivel1",
+      "nivel2",
+      "nivel3"
+    ],
+    "createdAt": "2026-04-28T13:28:37.293Z",
+    "updatedAt": "2026-04-28T13:36:30.611Z"
+  }
+]

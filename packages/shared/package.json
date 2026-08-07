@@ -1,0 +1,26 @@
+{
+  "name": "@viver-saude/shared",
+  "version": "0.1.0",
+  "description": "Tipos, contratos e constantes compartilhadas do Viver & Saúde.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "prepare": "npm run build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

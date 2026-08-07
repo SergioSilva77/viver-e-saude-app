@@ -1,0 +1,126 @@
+import 'dotenv/config'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import type { AiConfig } from './ai.js'
+
+// ── Config file paths ──────────────────────────────────────
+const AI_CONFIG_PATH = resolve(process.cwd(), '.ai-config.json')
+const STRIPE_CONFIG_PATH = resolve(process.cwd(), '.stripe-config.json')
+
+// ── Stripe config shape (file) ─────────────────────────────
+export interface StripeFileConfig {
+  secretKey: string
+  webhookSecret: string
+  priceIdNivel1: string
+  priceIdNivel2: string
+  priceIdNivel3: string
+}
+
+// ── File readers ───────────────────────────────────────────
+
+function readAiConfigFile(): Partial<AiConfig> {
+  try {
+    if (!existsSync(AI_CONFIG_PATH)) return {}
+    return JSON.parse(readFileSync(AI_CONFIG_PATH, 'utf-8')) as Partial<AiConfig>
+  } catch {
+    return {}
+  }
+}
+
+function readStripeConfigFile(): Partial<StripeFileConfig> {
+  try {
+    if (!existsSync(STRIPE_CONFIG_PATH)) return {}
+    return JSON.parse(readFileSync(STRIPE_CONFIG_PATH, 'utf-8')) as Partial<StripeFileConfig>
+  } catch {
+    return {}
+  }
+}
+
+// ── Static config (env vars) ───────────────────────────────
+
+export const config = {
+  port: Number(process.env.PORT ?? 4000),
+  appUrl: process.env.APP_URL ?? 'http://localhost:5173',
+  adminUrl: process.env.ADMIN_URL ?? 'http://localhost:5174',
+  supabaseUrl: process.env.SUPABASE_URL ?? '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+  adminApiSecret: process.env.ADMIN_API_SECRET ?? 'vs-admin-dev',
+  databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/viversaude',
+}
+
+// ── Email (SMTP) config ────────────────────────────────────
+
+export interface SmtpConfig {
+  host: string
+  port: number
+  secure: boolean
+  user: string
+  pass: string
+  from: string
+}
+
+export function getSmtpConfig(): SmtpConfig | null {
+  const host = process.env.SMTP_HOST ?? ''
+  const user = process.env.SMTP_USER ?? ''
+  const pass = process.env.SMTP_PASS ?? ''
+  if (!host || !user || !pass) return null
+  return {
+    host,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    user,
+    pass,
+    from: process.env.SMTP_FROM ?? user,
+  }
+}
+
+// ── Dynamic Stripe config ──────────────────────────────────
+// Priority: env vars → .stripe-config.json → empty string
+// Read at call time so admin-panel updates take effect without restart.
+
+export function getStripeConfig(): StripeFileConfig {
+  const file = readStripeConfigFile()
+  return {
+    secretKey:       process.env.STRIPE_SECRET_KEY        ?? file.secretKey        ?? '',
+    webhookSecret:   process.env.STRIPE_WEBHOOK_SECRET    ?? file.webhookSecret    ?? '',
+    priceIdNivel1:   process.env.STRIPE_PRICE_ID_NIVEL1   ?? file.priceIdNivel1    ?? '',
+    priceIdNivel2:   process.env.STRIPE_PRICE_ID_NIVEL2   ?? file.priceIdNivel2    ?? '',
+    priceIdNivel3:   process.env.STRIPE_PRICE_ID_NIVEL3   ?? file.priceIdNivel3    ?? '',
+  }
+}
+
+export function hasStripeConfig(): boolean {
+  return Boolean(getStripeConfig().secretKey)
+}
+
+export function hasSupabaseAdminConfig(): boolean {
+  return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey)
+}
+
+/**
+ * Resolves the current AI config.
+ * Priority: env vars → .ai-config.json → no config.
+ */
+export function getAiConfig(): AiConfig | null {
+  const fileConfig = readAiConfigFile()
+
+  const provider = (process.env.AI_PROVIDER as AiConfig['provider'] | undefined) ?? fileConfig.provider ?? 'claude'
+
+  let apiKey = fileConfig.apiKey ?? ''
+  let model = fileConfig.model ?? 'claude-sonnet-4-5'
+
+  if (provider === 'mimo' || provider === 'mimo-free') {
+    apiKey = process.env.OPENROUTER_API_KEY ?? apiKey
+    model = process.env.AI_MODEL ?? model
+  } else if (provider === 'gemini') {
+    apiKey = process.env.GEMINI_API_KEY ?? apiKey
+    model = process.env.AI_MODEL ?? model
+  } else {
+    apiKey = process.env.ANTHROPIC_API_KEY ?? apiKey
+    model = process.env.AI_MODEL ?? model
+  }
+
+  if (!apiKey) return null
+
+  return { provider, apiKey, model }
+}

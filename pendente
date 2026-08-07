@@ -1,0 +1,31 @@
+
+vamos focar no meu guardião:
+ja coloquei a chave da api antropic, e esta funcionando. por favor, preciso que vc teste e valide mensagens e retorno da api.
+verifique se esta mandando mensagem e retornando
+vou mandar mensagem no chat e o chat sera inteligente, uma troca de mensagem.
+a ia vai se contextualizar com limite de 10 mensangens anteriores, acredito que vc vai empilhar ou nao sei
+preciso que vc coloque se a ia está pensando ou nao
+se der erro mostre em amarelo que deu erro
+assim como um .md tem preview, quero preview tambem no chat assim como o preview.md
+a ia terá acesso as informacoes do usuario, peso, idade, altura, nome, sexo, historico familiar, tipo sanguineo
+no painel admin, vou poder nutrir a ia com arquivos somente .txt. vou poder fazer upload de arquivos para a ia ficar cada vez mais inteligente.
+vou instruir a ia para ser comportar como um assistente de saúde. que se preocupe com a saúde e vida saudavel do usuario. consiga guiar pelas informacoes do app 
+se baseie priorize o contexto do que vou nutrir ela com arquivos.
+se o usuario pedir outra coisa fora do contexto de saude, insistir mais que ele que só trata de saude e viver saudavel.
+compras, e coisas relacionadas a vida saudavel, responda baseado no que foi nutrido na ia com arquivos.
+se sair do contexto de saude, por exemplo falar sobre religiao, olhe primeiro se esta dentro do contexto de saude e agregue mais conhecimento, ou seja, pode somar seus conhecimentos com o que esta nutrido na ia.
+mastigue bem e siga os protocolos. nao seja muito chato, mas nao seja muito preguiçoso. seja honesto e legal e direto.
+
+
+
+programacao
+seja organizado
+seja um arquiteto de software, nao somente um programador.
+use principios de clean code, design patterns, etc.
+use principios de seguranca, etc.
+use principios de performance, etc.
+use principios de testes, etc.
+use principios de documentacao, etc.
+use principios de refatoracao, etc.
+use principios de refatoracao, etc.
+use boas praticas de programacao, etc.
