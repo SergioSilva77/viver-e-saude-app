@@ -57,6 +57,7 @@ function devLogPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), devLogPlugin()],
+  base: '/admin/',
   resolve: {
     alias: {
       '@viver-saude/shared': resolve(__dirname, '../../packages/shared/src/index.ts'),
