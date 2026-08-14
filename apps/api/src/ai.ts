@@ -161,7 +161,7 @@ export async function callMiMo(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://viversaude.com.br',
+      'HTTP-Referer': 'https://viveresaude.com',
       'X-Title': 'Viver & Saúde',
     },
     body: JSON.stringify({
@@ -207,7 +207,7 @@ export async function callMiMoFree(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://viversaude.com.br',
+      'HTTP-Referer': 'https://viveresaude.com',
       'X-Title': 'Viver & Saúde',
       'X-OpenRouter-Free': 'true',
     },
