@@ -59,22 +59,25 @@ export function SmtpSettings({ config, onChange }: Props) {
           </select>
         </div>
 
-        <div className="settings-divider">Credenciais</div>
+        <div className="settings-divider">Credenciais de acesso (login no servidor)</div>
 
         <div className="settings-field">
-          <label className="settings-label">Usuário (e-mail da conta)</label>
+          <label className="settings-label">Usuário — conta real do webmail</label>
           <input
             type="text"
             className="settings-input"
-            placeholder="conta@seudominio.com"
+            placeholder="A conta principal criada na Hostinger"
             value={config.user}
             autoComplete="off"
             onChange={(e) => set('user', e.target.value)}
           />
+          <span className="settings-hint">
+            É a conta que faz login no SMTP. Alias NÃO funciona aqui.
+          </span>
         </div>
 
         <div className="settings-field">
-          <label className="settings-label">Senha</label>
+          <label className="settings-label">Senha — da conta de webmail</label>
           <input
             type="password"
             className="settings-input"
@@ -85,8 +88,10 @@ export function SmtpSettings({ config, onChange }: Props) {
           />
         </div>
 
+        <div className="settings-divider">Identidade do remetente</div>
+
         <div className="settings-field">
-          <label className="settings-label">Remetente (From)</label>
+          <label className="settings-label">Remetente (From) — aparece no e-mail</label>
           <input
             type="text"
             className="settings-input"
@@ -94,6 +99,9 @@ export function SmtpSettings({ config, onChange }: Props) {
             value={config.from}
             onChange={(e) => set('from', e.target.value)}
           />
+          <span className="settings-hint">
+            Pode ser um alias da conta (ex: contato@…). É o endereço que o destinatário vê.
+          </span>
         </div>
       </div>
     </section>
