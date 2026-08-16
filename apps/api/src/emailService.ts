@@ -118,7 +118,7 @@ export async function sendPasswordResetLink(params: {
     return { sent: false, reason: 'SMTP não configurado' }
   }
 
-  const link = `${config.appUrl}/?reset=${encodeURIComponent(params.token)}`
+  const link = `viversaude://reset?token=${encodeURIComponent(params.token)}`
   const firstName = params.fullName.split(' ')[0]
 
   const transporter = nodemailer.createTransport({

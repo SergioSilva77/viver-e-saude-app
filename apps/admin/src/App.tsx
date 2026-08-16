@@ -4,6 +4,7 @@ import { UserDrawer } from './UserDrawer'
 import { CreateUserModal } from './CreateUserModal'
 import { AiSettingsPage } from './settings/AiSettingsPage'
 import { StripeSettingsPage } from './settings/StripeSettingsPage'
+import { SmtpSettingsPage } from './settings/SmtpSettingsPage'
 import { TokenUsagePage } from './settings/TokenUsagePage'
 import { CommunityPage } from './CommunityPage'
 import { RecipesPage } from './RecipesPage'
@@ -67,6 +68,7 @@ const NAV_ITEMS: { id: AdminSection; icon: string; label: string }[] = [
   { id: 'concessoes', icon: 'bi-stars', label: 'Concessões' },
   { id: 'config-ia', icon: 'bi-robot', label: 'IA' },
   { id: 'config-stripe', icon: 'bi-credit-card-2-front-fill', label: 'Stripe' },
+  { id: 'config-email', icon: 'bi-envelope-fill', label: 'E-mail' },
   { id: 'tokens', icon: 'bi-bar-chart-fill', label: 'Tokens' },
 ]
 
@@ -246,6 +248,9 @@ function App() {
 
           {/* ── STRIPE ───────────────────────────────────── */}
           {activeSection === 'config-stripe' && <StripeSettingsPage />}
+
+          {/* ── E-MAIL (SMTP) ────────────────────────────── */}
+          {activeSection === 'config-email' && <SmtpSettingsPage />}
 
           {/* ── TOKENS ───────────────────────────────────── */}
           {activeSection === 'tokens' && (

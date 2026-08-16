@@ -1,6 +1,6 @@
 import type { PlanId } from '@viver-saude/shared'
 
-export type AdminSection = 'usuarios' | 'receitas' | 'mensagens' | 'concessoes' | 'config-ia' | 'config-stripe' | 'tokens' | 'comunidade'
+export type AdminSection = 'usuarios' | 'receitas' | 'mensagens' | 'concessoes' | 'config-ia' | 'config-stripe' | 'config-email' | 'tokens' | 'comunidade'
 
 export type UserStatus = 'sem_plano' | 'nivel1' | 'nivel2' | 'nivel3' | 'acesso_manual'
 

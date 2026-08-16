@@ -56,6 +56,15 @@ export interface StripeConfig {
   priceIdNivel3: string
 }
 
+export interface SmtpConfig {
+  host: string
+  port: number
+  secure: boolean
+  user: string
+  pass: string
+  from: string
+}
+
 export interface ClaudeConfig {
   apiKey: string
   activeModel: ClaudeModelId
@@ -94,6 +103,7 @@ export interface AppSettings {
   session: SessionConfig
   stripe: StripeConfig
   ai: AiConfig
+  smtp: SmtpConfig
 }
 
 // ── Static model catalog ───────────────────────────────────
@@ -193,6 +203,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     priceIdNivel2: '',
     priceIdNivel3: '',
   },
+  smtp: {
+    host: '',
+    port: 587,
+    secure: false,
+    user: '',
+    pass: '',
+    from: '',
+  },
   ai: {
     activeProvider: 'claude',
     claude: {
@@ -225,6 +243,7 @@ export function loadSettings(): AppSettings {
     merged.ai.gemini = { ...DEFAULT_SETTINGS.ai.gemini, ...parsed.ai?.gemini }
     merged.ai.mimo = { ...DEFAULT_SETTINGS.ai.mimo, ...parsed.ai?.mimo }
     merged.ai.mimoFree = { ...DEFAULT_SETTINGS.ai.mimoFree, ...parsed.ai?.mimoFree }
+    merged.smtp = { ...DEFAULT_SETTINGS.smtp, ...parsed.smtp }
     return merged
   } catch {
     return structuredClone(DEFAULT_SETTINGS)

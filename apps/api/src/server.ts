@@ -5,7 +5,7 @@ import morgan from 'morgan'
 import multer from 'multer'
 import { z } from 'zod'
 import Stripe from 'stripe'
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve, extname, basename } from 'node:path'
 import {
   getCatalog,
@@ -17,7 +17,7 @@ import {
   getStripeClient,
 } from './services.js'
 import { getPlan } from '@viver-saude/shared'
-import { config, getStripeConfig, hasStripeConfig, getAiConfig, type StripeFileConfig } from './config.js'
+import { config, getStripeConfig, hasStripeConfig, getAiConfig, type StripeFileConfig, type SmtpFileConfig } from './config.js'
 import { chat, type ChatMessage, type UserProfile } from './ai.js'
 import { recordUsage, getUsageStats, setQuota } from './tokenTracker.js'
 import { listUsers, upsertUser, removeUser, findByEmail } from './userStore.js'
@@ -45,6 +45,7 @@ import {
 // ── Paths ──────────────────────────────────────────────────
 const AI_CONFIG_PATH = resolve(process.cwd(), '.ai-config.json')
 const STRIPE_CONFIG_PATH = resolve(process.cwd(), '.stripe-config.json')
+const SMTP_CONFIG_PATH = resolve(process.cwd(), '.smtp-config.json')
 const KNOWLEDGE_DIR = resolve(process.cwd(), 'knowledge')
 
 // Ensure required directories exist on startup
@@ -132,6 +133,15 @@ const stripeSettingsSchema = z.object({
   priceIdNivel1:  z.string().default(''),
   priceIdNivel2:  z.string().default(''),
   priceIdNivel3:  z.string().default(''),
+})
+
+const smtpSettingsSchema = z.object({
+  host:   z.string().min(1),
+  port:   z.number().int().min(1).max(65535).default(587),
+  secure: z.boolean().default(false),
+  user:   z.string().min(1),
+  pass:   z.string().min(1),
+  from:   z.string().default(''),
 })
 
 const loginSchema = z.object({
@@ -605,6 +615,37 @@ app.post('/api/admin/stripe-settings', requireAdminToken, (req, res) => {
     res.json({ ok: true, message: 'Configurações do Stripe salvas no servidor.' })
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao salvar configurações do Stripe.' })
+  }
+})
+
+// ── SMTP: read / save settings ────────────────────────────
+app.get('/api/admin/smtp-settings', requireAdminToken, (_req, res) => {
+  try {
+    if (!existsSync(SMTP_CONFIG_PATH)) {
+      res.json({ host: '', port: 587, secure: false, user: '', pass: '', from: '' })
+      return
+    }
+    const raw = JSON.parse(readFileSync(SMTP_CONFIG_PATH, 'utf-8')) as Partial<SmtpFileConfig>
+    res.json({
+      host:   raw.host   ?? '',
+      port:   raw.port   ?? 587,
+      secure: raw.secure ?? false,
+      user:   raw.user   ?? '',
+      pass:   raw.pass   ?? '',
+      from:   raw.from   ?? '',
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao ler configurações de e-mail.' })
+  }
+})
+
+app.post('/api/admin/smtp-settings', requireAdminToken, (req, res) => {
+  try {
+    const payload = smtpSettingsSchema.parse(req.body) satisfies SmtpFileConfig
+    writeFileSync(SMTP_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf-8')
+    res.json({ ok: true, message: 'Configurações de e-mail salvas no servidor.' })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao salvar configurações de e-mail.' })
   }
 })
 

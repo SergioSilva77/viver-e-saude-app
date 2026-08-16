@@ -6,6 +6,7 @@ import type { AiConfig } from './ai.js'
 // ── Config file paths ──────────────────────────────────────
 const AI_CONFIG_PATH = resolve(process.cwd(), '.ai-config.json')
 const STRIPE_CONFIG_PATH = resolve(process.cwd(), '.stripe-config.json')
+const SMTP_CONFIG_PATH = resolve(process.cwd(), '.smtp-config.json')
 
 // ── Stripe config shape (file) ─────────────────────────────
 export interface StripeFileConfig {
@@ -14,6 +15,16 @@ export interface StripeFileConfig {
   priceIdNivel1: string
   priceIdNivel2: string
   priceIdNivel3: string
+}
+
+// ── SMTP config shape (file) ───────────────────────────────
+export interface SmtpFileConfig {
+  host: string
+  port: number
+  secure: boolean
+  user: string
+  pass: string
+  from: string
 }
 
 // ── File readers ───────────────────────────────────────────
@@ -36,6 +47,15 @@ function readStripeConfigFile(): Partial<StripeFileConfig> {
   }
 }
 
+function readSmtpConfigFile(): Partial<SmtpFileConfig> {
+  try {
+    if (!existsSync(SMTP_CONFIG_PATH)) return {}
+    return JSON.parse(readFileSync(SMTP_CONFIG_PATH, 'utf-8')) as Partial<SmtpFileConfig>
+  } catch {
+    return {}
+  }
+}
+
 // ── Static config (env vars) ───────────────────────────────
 
 export const config = {
@@ -49,6 +69,8 @@ export const config = {
 }
 
 // ── Email (SMTP) config ────────────────────────────────────
+// Priority: env vars → .smtp-config.json → null
+// Read at call time so admin-panel updates take effect without restart.
 
 export interface SmtpConfig {
   host: string
@@ -60,17 +82,18 @@ export interface SmtpConfig {
 }
 
 export function getSmtpConfig(): SmtpConfig | null {
-  const host = process.env.SMTP_HOST ?? ''
-  const user = process.env.SMTP_USER ?? ''
-  const pass = process.env.SMTP_PASS ?? ''
+  const file = readSmtpConfigFile()
+  const host = process.env.SMTP_HOST ?? file.host ?? ''
+  const user = process.env.SMTP_USER ?? file.user ?? ''
+  const pass = process.env.SMTP_PASS ?? file.pass ?? ''
   if (!host || !user || !pass) return null
   return {
     host,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === 'true',
+    port: Number(process.env.SMTP_PORT ?? file.port ?? 587),
+    secure: (process.env.SMTP_SECURE ?? String(file.secure ?? false)) === 'true',
     user,
     pass,
-    from: process.env.SMTP_FROM ?? user,
+    from: process.env.SMTP_FROM ?? file.from ?? user,
   }
 }
 
