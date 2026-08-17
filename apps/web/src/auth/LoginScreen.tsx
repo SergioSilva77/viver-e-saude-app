@@ -140,6 +140,7 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
       userId: result.userId!,
       email: result.email!,
       fullName: result.fullName,
+      photoUrl: result.photoUrl,
       planIds: resolvedPlanIds,
       planExpiresAt: result.planExpiresAt,
       guardiao24hUnlockedUntil: buildGuardiao24hTimestamp(resolvedPlanIds),

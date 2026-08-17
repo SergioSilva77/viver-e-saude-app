@@ -7,6 +7,8 @@ export interface Session {
   email: string
   /** Display name (from backend StoredUser.fullName). May be empty for legacy data. */
   fullName?: string
+  /** Profile photo URL (from backend). */
+  photoUrl?: string
   /** All plan levels granted to this user. */
   planIds: PlanId[]
   expiresAt: number

@@ -326,6 +326,7 @@ function App() {
   const [sessionUserId, setSessionUserId] = useState<string | undefined>(undefined)
   const [sessionUserEmail, setSessionUserEmail] = useState<string | undefined>(undefined)
   const [sessionUserName, setSessionUserName] = useState<string>('')
+  const [sessionUserPhotoUrl, setSessionUserPhotoUrl] = useState<string>('')
 
   // 24h MeuGuardião unlock state
   const [guardiao24hUntil, setGuardiao24hUntil] = useState<number | null>(null)
@@ -437,6 +438,7 @@ function App() {
       setSessionUserId(session.userId)
       setSessionUserEmail(session.email)
       setSessionUserName(session.fullName ?? '')
+      setSessionUserPhotoUrl(session.photoUrl ?? '')
       setAuthState('authenticated')
     } else {
       setAuthState('unauthenticated')
@@ -458,6 +460,7 @@ function App() {
         setSessionUserId(undefined)
         setSessionUserEmail(undefined)
         setSessionUserName('')
+        setSessionUserPhotoUrl('')
         setActivePlans([])
         setAuthState('unauthenticated')
       }
@@ -613,6 +616,7 @@ function App() {
             setSessionUserId(session.userId)
             setSessionUserEmail(session.email)
             setSessionUserName(session.fullName ?? '')
+            setSessionUserPhotoUrl(session.photoUrl ?? '')
           }
           setGuardiao24hUntil(session?.guardiao24hUnlockedUntil ?? null)
           setConsultantUsed(session?.consultantUsed ?? false)
@@ -677,6 +681,7 @@ function App() {
     setSessionUserId(undefined)
     setSessionUserEmail(undefined)
     setSessionUserName('')
+    setSessionUserPhotoUrl('')
     setActivePlans([])
     setAuthState('unauthenticated')
   }
@@ -1038,7 +1043,42 @@ function App() {
           ) : (
             <>
               <div>
-                <div className="profile-avatar"><i className="bi bi-person-fill"></i></div>
+                <label className="profile-avatar" style={{ cursor: 'pointer', position: 'relative' }}>
+                  {sessionUserPhotoUrl ? (
+                    <img src={sessionUserPhotoUrl} alt={sessionUserName} className="profile-avatar-img" />
+                  ) : (
+                    <i className="bi bi-person-fill"></i>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file || !sessionUserId) return
+                      const formData = new FormData()
+                      formData.append('avatar', file)
+                      try {
+                        const res = await fetch(`/api/user/${sessionUserId}/avatar`, { method: 'POST', body: formData })
+                        if (res.ok) {
+                          const data = await res.json()
+                          const newUrl = data.photoUrl as string
+                          setSessionUserPhotoUrl(newUrl)
+                          // Update session in localStorage
+                          const session = loadSession()
+                          if (session) {
+                            saveSession({ ...session, photoUrl: newUrl })
+                          }
+                        }
+                      } catch (err) {
+                        console.error('Erro ao enviar foto:', err)
+                      }
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                  <span className="avatar-edit-overlay">
+                    <i className="bi bi-camera-fill"></i>
+                  </span>
+                </label>
                 <div className="profile-name">{sessionUserName || 'Meu Perfil'}</div>
                 {sessionUserEmail && (
                   <div className="profile-email">{sessionUserEmail}</div>
