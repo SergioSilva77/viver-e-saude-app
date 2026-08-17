@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR NOT NULL DEFAULT '',
   email VARCHAR UNIQUE NOT NULL,
   password VARCHAR NOT NULL DEFAULT '',
+  photo_url VARCHAR DEFAULT '',
   plan_ids JSONB DEFAULT '[]',
   plan_expires_at JSONB DEFAULT '{}',
   subscription_ids JSONB DEFAULT '{}',

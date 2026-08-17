@@ -26,6 +26,7 @@ export interface AdminUser {
   id: string
   fullName: string
   email: string
+  photoUrl?: string
   /** Array of plan levels granted to this user. Replaces legacy planId. */
   planIds: PlanId[]
   status: UserStatus

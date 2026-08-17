@@ -48,6 +48,7 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
   const [expiresAt, setExpiresAt] = useState(user.expiresAt ?? '')
   const [reason, setReason] = useState('')
   const [resources, setResources] = useState<ResourceToggle[]>(user.resources)
+  const [uploading, setUploading] = useState(false)
 
   function togglePlan(planId: PlanId) {
     setGrantPlans((prev) =>
@@ -63,6 +64,28 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
         r.id === id ? { ...r, override: cycleOverride(r.override) } : r
       )
     )
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('avatar', file)
+      const res = await adminFetch(`/api/user/${user.id}/avatar`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        onUpdate({ ...user, photoUrl: data.photoUrl })
+      }
+    } catch (err) {
+      console.error('Erro ao enviar avatar:', err)
+    } finally {
+      setUploading(false)
+    }
   }
 
   async function applyGrant() {
@@ -107,9 +130,23 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
         {/* Cabeçalho */}
         <div className="drawer-header">
           <div className="drawer-user-info">
-            <div className="drawer-avatar">
-              {user.fullName.charAt(0).toUpperCase()}
-            </div>
+            <label className="drawer-avatar" style={{ cursor: 'pointer', position: 'relative' }}>
+              {user.photoUrl ? (
+                <img src={user.photoUrl} alt={user.fullName} className="drawer-avatar-img" />
+              ) : (
+                user.fullName.charAt(0).toUpperCase()
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                style={{ display: 'none' }}
+                disabled={uploading}
+              />
+              <span className="avatar-upload-overlay">
+                {uploading ? <i className="bi bi-arrow-repeat spin" /> : <i className="bi bi-camera-fill" />}
+              </span>
+            </label>
             <div>
               <h3 className="drawer-name">{user.fullName}</h3>
               <p className="drawer-email">{user.email}</p>

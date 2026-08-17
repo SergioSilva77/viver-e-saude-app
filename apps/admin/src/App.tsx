@@ -19,6 +19,7 @@ interface ApiUser {
   id: string
   fullName: string
   email: string
+  photoUrl?: string
   planIds: string[]
   planExpiresAt?: Record<string, string>
   subscriptionIds?: Record<string, string>
@@ -48,6 +49,7 @@ function apiUserToAdminUser(u: ApiUser): AdminUser {
     id: u.id,
     fullName: u.fullName || u.email,
     email: u.email,
+    photoUrl: u.photoUrl,
     planIds,
     status,
     createdAt: '—',

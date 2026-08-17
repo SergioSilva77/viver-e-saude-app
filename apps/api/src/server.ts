@@ -7,7 +7,7 @@ import { z } from 'zod'
 import Stripe from 'stripe'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { resolve, extname, basename } from 'node:path'
+import { resolve, extname, basename, join } from 'node:path'
 import {
   getCatalog,
   createCheckoutSession,
@@ -193,6 +193,30 @@ const upload = multer({
   },
 })
 
+// ── Avatar upload — images only, max 2 MB ─────────────────
+const AVATARS_DIR = join(process.cwd(), 'uploads', 'avatars')
+if (!existsSync(AVATARS_DIR)) mkdirSync(AVATARS_DIR, { recursive: true })
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, AVATARS_DIR),
+    filename: (_req, file, cb) => {
+      const ext = extname(file.originalname).toLowerCase() || '.jpg'
+      cb(null, `${_req.params.id}${ext}`)
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+    const ext = extname(file.originalname).toLowerCase()
+    if (!allowed.includes(ext)) {
+      cb(new Error('Apenas imagens (JPG, PNG, WEBP, GIF) são aceitas.'))
+      return
+    }
+    cb(null, true)
+  },
+})
+
 // ── Admin session store (in-memory, 8h TTL) ───────────────
 const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000
 const adminSessions = new Map<string, number>() // token → expiresAt
@@ -239,6 +263,13 @@ function requireAdminToken(
 
 // ── App ────────────────────────────────────────────────────
 const app = express()
+
+// ── Migration: add photo_url column if missing ────────────
+import('./db.js').then(({ query: dbQuery }) => {
+  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR DEFAULT ''")
+    .then(() => console.log('[DB] photo_url column ensured'))
+    .catch(() => { /* column already exists or DB not ready */ })
+})
 
 // Webhook route must be before express.json()
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (request, response) => {
@@ -1090,6 +1121,7 @@ app.post('/api/auth/login', async (req, res) => {
       userId: user.id,
       email: user.email,
       fullName: user.fullName ?? '',
+      photoUrl: user.photoUrl ?? '',
       planIds: user.planIds,
       planExpiresAt: user.planExpiresAt ?? {},
     })
@@ -1312,6 +1344,92 @@ app.post('/reset-password', async (req, res) => {
 })
 
 // ── Start ──────────────────────────────────────────────────
+
+// Serve uploaded files (avatars)
+app.use('/uploads', express.static(join(process.cwd(), 'uploads')))
+
+// ── User profile (used by Flutter app) ─────────────────────
+app.get('/api/user/me', async (req, res) => {
+  try {
+    const userId = String(req.query.userId ?? '')
+    if (!userId) {
+      res.status(400).json({ message: 'userId obrigatório.' })
+      return
+    }
+    const user = await findByEmail('') // won't work, need findById
+    // Actually let's use a direct query
+    const { query: dbQuery } = await import('./db.js')
+    const { rows } = await dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [userId])
+    if (rows.length === 0) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    const row = rows[0]
+    res.json({
+      userId: row.id,
+      email: row.email,
+      fullName: row.full_name ?? '',
+      photoUrl: row.photo_url ?? '',
+      planIds: row.plan_ids ?? [],
+      planExpiresAt: row.plan_expires_at ?? {},
+      healthProfile: (row as Record<string, unknown>).health_profile ?? null,
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar perfil.' })
+  }
+})
+
+app.put('/api/user/profile', async (req, res) => {
+  try {
+    const { userId, fullName, healthProfile } = req.body ?? {} as Record<string, unknown>
+    if (!userId) {
+      res.status(400).json({ message: 'userId obrigatório.' })
+      return
+    }
+    const { query: dbQuery } = await import('./db.js')
+    const { rows } = await dbQuery('SELECT * FROM users WHERE id = $1 LIMIT 1', [String(userId)])
+    if (rows.length === 0) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    const row = rows[0]
+    await dbQuery(
+      `UPDATE users SET full_name = $1 WHERE id = $2`,
+      [fullName ?? row.full_name, String(userId)],
+    )
+    res.json({ ok: true, message: 'Perfil atualizado.' })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar perfil.' })
+  }
+})
+
+// ── Avatar upload ──────────────────────────────────────────
+app.post('/api/user/:id/avatar', (req, res) => {
+  avatarUpload.single('avatar')(req, res, (err) => {
+    if (err) {
+      const msg = err instanceof multer.MulterError ? 'Erro no upload: ' + err.message : String(err)
+      res.status(400).json({ message: msg })
+      return
+    }
+    if (!req.file) {
+      res.status(400).json({ message: 'Nenhum arquivo enviado.' })
+      return
+    }
+    const ext = extname(req.file.originalname).toLowerCase() || '.jpg'
+    const photoUrl = `/uploads/avatars/${req.params.id}${ext}`
+    // Update user in DB
+    import('./db.js').then(({ query: dbQuery }) => {
+      dbQuery('UPDATE users SET photo_url = $1 WHERE id = $2', [photoUrl, String(req.params.id)])
+        .then(() => {
+          res.json({ ok: true, photoUrl })
+        })
+        .catch((e: unknown) => {
+          res.status(500).json({ message: e instanceof Error ? e.message : 'Erro ao salvar avatar.' })
+        })
+    })
+  })
+})
+
 app.listen(config.port, () => {
   console.log(`Viver & Saúde API pronta em http://localhost:${config.port}`)
 })

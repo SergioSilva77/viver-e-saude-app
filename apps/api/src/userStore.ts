@@ -8,6 +8,7 @@ export interface StoredUser {
   email: string
   planIds: string[]
   password: string
+  photoUrl?: string
   planExpiresAt?: Record<string, string>
   subscriptionIds?: Record<string, string>
   planCancelledAt?: Record<string, string>
@@ -18,6 +19,7 @@ interface UserRow {
   full_name: string
   email: string
   password: string
+  photo_url: string
   plan_ids: string[]
   plan_expires_at: Record<string, string>
   subscription_ids: Record<string, string>
@@ -30,6 +32,7 @@ function rowToUser(row: UserRow): StoredUser {
     fullName: row.full_name,
     email: row.email,
     password: row.password,
+    photoUrl: row.photo_url || undefined,
     planIds: row.plan_ids ?? [],
     planExpiresAt: row.plan_expires_at ?? {},
     subscriptionIds: row.subscription_ids ?? {},
@@ -52,12 +55,14 @@ export async function upsertUser(
     fullName: data.fullName ?? existing?.fullName ?? '',
     planIds: data.planIds ?? existing?.planIds ?? [],
     password: data.password ?? existing?.password ?? '',
+    photoUrl: data.photoUrl ?? existing?.photoUrl,
     ...existing,
     id: data.id,
     email: data.email,
     ...(data.fullName !== undefined ? { fullName: data.fullName } : {}),
     ...(data.planIds !== undefined ? { planIds: data.planIds } : {}),
     ...(data.password !== undefined ? { password: data.password } : {}),
+    ...(data.photoUrl !== undefined ? { photoUrl: data.photoUrl } : {}),
     ...(data.planExpiresAt !== undefined
       ? { planExpiresAt: { ...(existing?.planExpiresAt ?? {}), ...data.planExpiresAt } }
       : {}),
@@ -70,12 +75,13 @@ export async function upsertUser(
   }
 
   await query(
-    `INSERT INTO users (id, full_name, email, password, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO users (id, full_name, email, password, photo_url, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (id) DO UPDATE SET
        full_name = EXCLUDED.full_name,
        email = EXCLUDED.email,
        password = EXCLUDED.password,
+       photo_url = EXCLUDED.photo_url,
        plan_ids = EXCLUDED.plan_ids,
        plan_expires_at = EXCLUDED.plan_expires_at,
        subscription_ids = EXCLUDED.subscription_ids,
@@ -85,6 +91,7 @@ export async function upsertUser(
       merged.fullName,
       merged.email,
       merged.password,
+      merged.photoUrl ?? '',
       JSON.stringify(merged.planIds),
       JSON.stringify(merged.planExpiresAt),
       JSON.stringify(merged.subscriptionIds),

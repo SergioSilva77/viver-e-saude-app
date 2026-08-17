@@ -59,7 +59,11 @@ export function UserList({ users, onSelect, onCreateNew }: Props) {
           <div key={user.id} className="user-row">
             <div className="user-row-name">
               <div className="user-avatar">
-                {user.fullName.charAt(0).toUpperCase()}
+                {user.photoUrl ? (
+                  <img src={user.photoUrl} alt={user.fullName} className="user-avatar-img" />
+                ) : (
+                  user.fullName.charAt(0).toUpperCase()
+                )}
               </div>
               <span>{user.fullName}</span>
             </div>
