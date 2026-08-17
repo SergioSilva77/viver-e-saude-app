@@ -677,11 +677,13 @@ app.post('/api/admin/access-grants', requireAdminToken, async (req, res) => {
 
 // ── Secret masking ─────────────────────────────────────────
 // GET endpoints nunca retornam secrets reais — só o placeholder.
-// No POST, valor igual ao placeholder (ou vazio) = manter o valor atual.
+// No POST, valor "parecido com máscara" (só bullets/asteriscos/?
+// — inclusive com encoding quebrado) ou vazio = manter o atual.
 const SECRET_MASK = '••••••••'
 const mask = (v: string | undefined): string => (v ? SECRET_MASK : '')
+const isMaskLike = (v: string): boolean => v.length > 0 && /^[•?*\s]+$/.test(v)
 const keepIfMasked = (incoming: string, current: string): string =>
-  !incoming || incoming === SECRET_MASK ? current : incoming
+  !incoming || isMaskLike(incoming) ? current : incoming
 
 // ── AI: read / save settings ───────────────────────────────
 app.get('/api/admin/ai-settings', requireAdminToken, (_req, res) => {
