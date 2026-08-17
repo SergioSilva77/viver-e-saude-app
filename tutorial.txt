@@ -63,7 +63,9 @@ Crie os arquivos .env em cada pasta de app:
   PORT=4000
   DATABASE_URL=postgres://postgres:postgres@localhost:5432/viversaude
   ADMIN_EMAIL=admin@viveresaude.com
-  ADMIN_PASSWORD=troque-por-uma-senha-forte
+  ADMIN_PASSWORD="troque-por-uma-senha-forte"
+  (ATENÇÃO: se a senha tiver #, ela DEVE estar entre aspas duplas —
+   o dotenv corta o valor no # sem aspas! Ex: ADMIN_PASSWORD="abc#123")
   APP_URL=http://localhost:5173
   ADMIN_URL=http://localhost:5174
 
