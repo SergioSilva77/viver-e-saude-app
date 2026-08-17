@@ -244,6 +244,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 })
 
 app.use(express.json())
+app.use(express.urlencoded({ extended: false }))
 app.use(cors({ origin: [config.appUrl, config.adminUrl] }))
 app.use(helmet())
 app.use(morgan('dev'))
@@ -1023,18 +1024,19 @@ app.delete('/api/admin/users/:id', requireAdminToken, async (req, res) => {
 })
 
 // ── Reset password web page ────────────────────────────────
-app.get('/reset-password', (req, res) => {
-  const token = req.query.token as string
-  if (!token) {
-    res.status(400).send('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Link inválido</title></head><body style="font-family:sans-serif;text-align:center;padding:80px 20px;"><h2>Link inválido</h2><p>O token não foi fornecido. Solicite um novo link de redefinição.</p></body></html>')
-    return
-  }
-  res.send(`<!DOCTYPE html>
+// Formulário com POST nativo (sem JavaScript) — funciona em qualquer
+// navegador/WebView, inclusive os que bloqueiam ou quebram scripts.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function resetPageShell(title: string, icon: string, body: string): string {
+  return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Redefinir senha — Viver &amp; Saúde</title>
+  <title>${title} — Viver &amp; Saúde</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f9f6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -1051,7 +1053,6 @@ app.get('/reset-password', (req, res) => {
     input:focus{outline:none;border-color:#2e7d5e;box-shadow:0 0 0 3px rgba(46,125,94,.15)}
     .btn{width:100%;background:#2e7d5e;color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;transition:background .2s;margin-top:8px}
     .btn:hover{background:#246a4e}
-    .btn:disabled{background:#b0c9bf;cursor:not-allowed}
     .msg{padding:14px 16px;border-radius:12px;margin-bottom:20px;font-size:14px;line-height:1.5}
     .msg.ok{background:#e8f5e9;color:#2e7d5e}
     .msg.err{background:#fce4e4;color:#c0392b}
@@ -1062,61 +1063,89 @@ app.get('/reset-password', (req, res) => {
 <body>
   <div class="card">
     <div class="header">
-      <div class="icon">🔑</div>
+      <div class="icon">${icon}</div>
       <h1>Viver &amp; Saúde</h1>
     </div>
-    <div class="body" id="form-area">
+    <div class="body">${body}</div>
+    <div class="footer"><p>© ${new Date().getFullYear()} Viver &amp; Saúde. Todos os direitos reservados.</p></div>
+  </div>
+</body>
+</html>`
+}
+
+function renderResetForm(token: string, error?: string): string {
+  return resetPageShell('Redefinir senha', '🔑', `
       <h2>Redefinir sua senha</h2>
       <p class="info">Crie uma nova senha para acessar sua conta. Mínimo de 8 caracteres.</p>
-      <div id="msg" style="display:none"></div>
-      <form id="form">
+      ${error ? `<div class="msg err">${escapeHtml(error)}</div>` : ''}
+      <form method="POST" action="/reset-password">
+        <input type="hidden" name="token" value="${escapeHtml(token)}">
         <div class="field">
           <label for="pw">Nova senha</label>
-          <input type="password" id="pw" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+          <input type="password" id="pw" name="password" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
         </div>
         <div class="field">
           <label for="pw2">Confirmar senha</label>
-          <input type="password" id="pw2" placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
+          <input type="password" id="pw2" name="confirm" placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
         </div>
-        <button type="submit" class="btn" id="submitBtn">Redefinir senha</button>
-      </form>
-    </div>
-    <div class="footer"><p>© ${new Date().getFullYear()} Viver &amp; Saúde. Todos os direitos reservados.</p></div>
-  </div>
-  <script>
-    const token = new URLSearchParams(window.location.search).get('token')
-    if (!token) { document.getElementById('form-area').innerHTML = '<h2>Link inválido</h2><p style="color:#4a6258;margin-top:12px;">O token não foi fornecido. Solicite um novo link de redefinição.</p>' }
-    document.getElementById('form').addEventListener('submit', async (e) => {
-      e.preventDefault()
-      const pw = document.getElementById('pw').value.trim()
-      const pw2 = document.getElementById('pw2').value.trim()
-      const msg = document.getElementById('msg')
-      const btn = document.getElementById('submitBtn')
-      msg.style.display = 'none'
-      if (pw.length < 8) { msg.textContent = 'A senha deve ter pelo menos 8 caracteres.'; msg.className = 'msg err'; msg.style.display = 'block'; return }
-      if (pw !== pw2) { msg.textContent = 'As senhas não conferem.'; msg.className = 'msg err'; msg.style.display = 'block'; return }
-      btn.disabled = true; btn.textContent = 'Redefinindo...'
-      try {
-        const res = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: pw }) })
-        const data = await res.json()
-        if (data.ok) {
-          msg.textContent = data.message || 'Senha redefinida com sucesso! Abra o app e faça login.'
-          msg.className = 'msg ok'; msg.style.display = 'block'
-          document.getElementById('form').style.display = 'none'
-        } else {
-          msg.textContent = data.message || 'Erro ao redefinir senha.'
-          msg.className = 'msg err'; msg.style.display = 'block'
-          btn.disabled = false; btn.textContent = 'Redefinir senha'
-        }
-      } catch (err) {
-        msg.textContent = 'Erro de conexão. Tente novamente.'
-        msg.className = 'msg err'; msg.style.display = 'block'
-        btn.disabled = false; btn.textContent = 'Redefinir senha'
-      }
-    })
-  </script>
-</body>
-</html>`)
+        <button type="submit" class="btn">Redefinir senha</button>
+      </form>`)
+}
+
+function renderResetMessage(title: string, message: string, ok: boolean): string {
+  return resetPageShell(title, ok ? '✅' : '⚠️', `
+      <h2>${escapeHtml(title)}</h2>
+      <div class="msg ${ok ? 'ok' : 'err'}">${escapeHtml(message)}</div>
+      ${ok ? '<p class="info">Abra o app e faça login com sua nova senha.</p>' : ''}`)
+}
+
+app.get('/reset-password', (req, res) => {
+  const token = req.query.token as string
+  if (!token) {
+    res.status(400).send(renderResetMessage('Link inválido', 'O token não foi fornecido. Solicite um novo link de redefinição.', false))
+    return
+  }
+  res.send(renderResetForm(token))
+})
+
+app.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password, confirm } = (req.body ?? {}) as {
+      token?: string
+      password?: string
+      confirm?: string
+    }
+
+    if (!token) {
+      res.status(400).send(renderResetMessage('Link inválido', 'O token não foi fornecido. Solicite um novo link de redefinição.', false))
+      return
+    }
+    if (!password || password.length < 8) {
+      res.status(400).send(renderResetForm(token, 'A senha deve ter pelo menos 8 caracteres.'))
+      return
+    }
+    if (password !== confirm) {
+      res.status(400).send(renderResetForm(token, 'As senhas não conferem.'))
+      return
+    }
+
+    const email = await consumeResetToken(token)
+    if (!email) {
+      res.status(400).send(renderResetMessage('Link inválido ou expirado', 'Este link já foi usado ou expirou. Solicite um novo link de redefinição.', false))
+      return
+    }
+
+    const user = await findByEmail(email)
+    if (!user) {
+      res.status(404).send(renderResetMessage('Erro', 'Usuário não encontrado.', false))
+      return
+    }
+
+    await upsertUser({ id: user.id, email: user.email, password })
+    res.send(renderResetMessage('Senha redefinida!', 'Sua senha foi alterada com sucesso.', true))
+  } catch {
+    res.status(500).send(renderResetMessage('Erro', 'Erro ao redefinir senha. Tente novamente.', false))
+  }
 })
 
 // ── Start ──────────────────────────────────────────────────
