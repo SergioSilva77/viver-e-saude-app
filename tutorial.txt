@@ -62,7 +62,8 @@ Crie os arquivos .env em cada pasta de app:
   --- apps/api/.env ---
   PORT=4000
   DATABASE_URL=postgres://postgres:postgres@localhost:5432/viversaude
-  ADMIN_API_SECRET=vs-admin-dev
+  ADMIN_EMAIL=admin@viveresaude.com
+  ADMIN_PASSWORD=troque-por-uma-senha-forte
   APP_URL=http://localhost:5173
   ADMIN_URL=http://localhost:5174
 
@@ -70,7 +71,8 @@ Crie os arquivos .env em cada pasta de app:
   (nenhuma variável necessária para funcionamento local)
 
   --- apps/admin/.env ---
-  VITE_ADMIN_TOKEN=vs-admin-dev
+  (nenhuma variável — o login admin é validado no backend via
+   POST /api/admin/login; nenhuma credencial fica no bundle JS)
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -250,9 +252,9 @@ Para ativar o chat com IA:
   CREDENCIAIS PADRÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Admin panel:
-    Email:    admin@viversaude.com
-    Senha:    admin123456
+  Admin panel (login validado no backend — sessão de 8h):
+    Email:    admin@viveresaude.com
+    Senha:    a definida em ADMIN_PASSWORD no apps/api/.env
 
   Banco de dados:
     Host:     localhost
@@ -261,5 +263,7 @@ Para ativar o chat com IA:
     User:     postgres
     Senha:    postgres
 
-  Admin API token:
-    vs-admin-dev
+  Autenticação admin (desde ago/2026):
+    Não existe mais token fixo. O painel faz POST /api/admin/login
+    com e-mail/senha e recebe um token de sessão aleatório (8h).
+    Rate limit: 5 falhas = 15 min de bloqueio por IP.
