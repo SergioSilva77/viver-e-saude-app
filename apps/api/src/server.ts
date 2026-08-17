@@ -1022,6 +1022,103 @@ app.delete('/api/admin/users/:id', requireAdminToken, async (req, res) => {
   }
 })
 
+// ── Reset password web page ────────────────────────────────
+app.get('/reset-password', (req, res) => {
+  const token = req.query.token as string
+  if (!token) {
+    res.status(400).send('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Link inválido</title></head><body style="font-family:sans-serif;text-align:center;padding:80px 20px;"><h2>Link inválido</h2><p>O token não foi fornecido. Solicite um novo link de redefinição.</p></body></html>')
+    return
+  }
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redefinir senha — Viver &amp; Saúde</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f9f6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:#fff;border-radius:20px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:440px;width:100%;overflow:hidden}
+    .header{background:linear-gradient(135deg,#2e7d5e,#56a87a);padding:36px 32px;text-align:center}
+    .header .icon{font-size:36px;margin-bottom:8px}
+    .header h1{color:#fff;font-size:22px;font-weight:800;letter-spacing:-.02em}
+    .body{padding:36px 32px}
+    h2{color:#1a2e26;font-size:20px;font-weight:700;margin-bottom:12px}
+    p.info{color:#4a6258;font-size:15px;line-height:1.6;margin-bottom:24px}
+    .field{margin-bottom:20px}
+    label{display:block;color:#1a2e26;font-size:14px;font-weight:600;margin-bottom:6px}
+    input{width:100%;padding:14px 16px;border:1px solid #d1e5da;border-radius:12px;font-size:15px;transition:border-color .2s}
+    input:focus{outline:none;border-color:#2e7d5e;box-shadow:0 0 0 3px rgba(46,125,94,.15)}
+    .btn{width:100%;background:#2e7d5e;color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;transition:background .2s;margin-top:8px}
+    .btn:hover{background:#246a4e}
+    .btn:disabled{background:#b0c9bf;cursor:not-allowed}
+    .msg{padding:14px 16px;border-radius:12px;margin-bottom:20px;font-size:14px;line-height:1.5}
+    .msg.ok{background:#e8f5e9;color:#2e7d5e}
+    .msg.err{background:#fce4e4;color:#c0392b}
+    .footer{background:#f4f9f6;padding:20px 32px;text-align:center}
+    .footer p{color:#b0c9bf;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="icon">🔑</div>
+      <h1>Viver &amp; Saúde</h1>
+    </div>
+    <div class="body" id="form-area">
+      <h2>Redefinir sua senha</h2>
+      <p class="info">Crie uma nova senha para acessar sua conta. Mínimo de 8 caracteres.</p>
+      <div id="msg" style="display:none"></div>
+      <form id="form">
+        <div class="field">
+          <label for="pw">Nova senha</label>
+          <input type="password" id="pw" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="pw2">Confirmar senha</label>
+          <input type="password" id="pw2" placeholder="Repita a senha" required minlength="8" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn" id="submitBtn">Redefinir senha</button>
+      </form>
+    </div>
+    <div class="footer"><p>© ${new Date().getFullYear()} Viver &amp; Saúde. Todos os direitos reservados.</p></div>
+  </div>
+  <script>
+    const token = new URLSearchParams(window.location.search).get('token')
+    if (!token) { document.getElementById('form-area').innerHTML = '<h2>Link inválido</h2><p style="color:#4a6258;margin-top:12px;">O token não foi fornecido. Solicite um novo link de redefinição.</p>' }
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const pw = document.getElementById('pw').value.trim()
+      const pw2 = document.getElementById('pw2').value.trim()
+      const msg = document.getElementById('msg')
+      const btn = document.getElementById('submitBtn')
+      msg.style.display = 'none'
+      if (pw.length < 8) { msg.textContent = 'A senha deve ter pelo menos 8 caracteres.'; msg.className = 'msg err'; msg.style.display = 'block'; return }
+      if (pw !== pw2) { msg.textContent = 'As senhas não conferem.'; msg.className = 'msg err'; msg.style.display = 'block'; return }
+      btn.disabled = true; btn.textContent = 'Redefinindo...'
+      try {
+        const res = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: pw }) })
+        const data = await res.json()
+        if (data.ok) {
+          msg.textContent = data.message || 'Senha redefinida com sucesso! Abra o app e faça login.'
+          msg.className = 'msg ok'; msg.style.display = 'block'
+          document.getElementById('form').style.display = 'none'
+        } else {
+          msg.textContent = data.message || 'Erro ao redefinir senha.'
+          msg.className = 'msg err'; msg.style.display = 'block'
+          btn.disabled = false; btn.textContent = 'Redefinir senha'
+        }
+      } catch (err) {
+        msg.textContent = 'Erro de conexão. Tente novamente.'
+        msg.className = 'msg err'; msg.style.display = 'block'
+        btn.disabled = false; btn.textContent = 'Redefinir senha'
+      }
+    })
+  </script>
+</body>
+</html>`)
+})
+
 // ── Start ──────────────────────────────────────────────────
 app.listen(config.port, () => {
   console.log(`Viver & Saúde API pronta em http://localhost:${config.port}`)

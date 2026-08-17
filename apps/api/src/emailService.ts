@@ -118,7 +118,8 @@ export async function sendPasswordResetLink(params: {
     return { sent: false, reason: 'SMTP não configurado' }
   }
 
-  const link = `viversaude://reset?token=${encodeURIComponent(params.token)}`
+  const webLink = `${config.appUrl}/reset-password?token=${encodeURIComponent(params.token)}`
+  const deepLink = `${config.appScheme}://reset?token=${encodeURIComponent(params.token)}`
   const firstName = params.fullName.split(' ')[0]
 
   const transporter = nodemailer.createTransport({
@@ -156,11 +157,11 @@ export async function sendPasswordResetLink(params: {
               Este link é válido por <strong>1 hora</strong>. Se você não solicitou a redefinição, ignore este e-mail — sua senha não será alterada.
             </p>
 
-            <!-- CTA Button -->
+            <!-- CTA Button (web link — funciona no navegador) -->
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
               <tr>
                 <td align="center">
-                  <a href="${link}" style="display:inline-block;background:#2e7d5e;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:16px 36px;border-radius:14px;letter-spacing:-0.01em;">
+                  <a href="${webLink}" style="display:inline-block;background:#2e7d5e;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:16px 36px;border-radius:14px;letter-spacing:-0.01em;">
                     Redefinir minha senha
                   </a>
                 </td>
@@ -171,7 +172,16 @@ export async function sendPasswordResetLink(params: {
               Se o botão não funcionar, copie e cole este link no seu navegador:
             </p>
             <p style="color:#7a9e91;font-size:12px;word-break:break-all;margin:0 0 28px;">
-              <a href="${link}" style="color:#2e7d5e;">${link}</a>
+              <a href="${webLink}" style="color:#2e7d5e;">${webLink}</a>
+            </p>
+
+            <!-- Deep link for mobile app -->
+            <hr style="border:none;border-top:1px solid #e8f2ed;margin:0 0 24px;">
+            <p style="color:#7a9e91;font-size:13px;line-height:1.5;margin:0 0 8px;">
+              Se estiver no celular com o app instalado, abra diretamente no app:
+            </p>
+            <p style="margin:0 0 28px;">
+              <a href="${deepLink}" style="color:#2e7d5e;font-size:13px;font-weight:600;">Abrir no app Viver &amp; Saúde</a>
             </p>
 
             <hr style="border:none;border-top:1px solid #e8f2ed;margin:0 0 24px;">
@@ -201,7 +211,7 @@ export async function sendPasswordResetLink(params: {
       to: params.to,
       subject: 'Redefinição de senha — Viver & Saúde',
       html,
-      text: `Olá, ${firstName}!\n\nClique no link abaixo para redefinir sua senha (válido por 1 hora):\n\n${link}\n\nSe você não solicitou a redefinição, ignore este e-mail.`,
+      text: `Olá, ${firstName}!\n\nRedefina sua senha no link abaixo (válido por 1 hora):\n\n${webLink}\n\nOu, se tiver o app instalado, abra direto:\n${deepLink}\n\nSe você não solicitou a redefinição, ignore este e-mail.`,
     })
 
     console.log('[Email] E-mail de redefinição enviado para', params.to)
