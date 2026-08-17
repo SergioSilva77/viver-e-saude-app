@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { plans, getEffectivePlanId } from '@viver-saude/shared'
+import { adminFetch } from './lib/adminApi'
 import type { AdminUser, ResourceOverride, ResourceToggle, UserStatus } from './types'
 import type { PlanId } from '@viver-saude/shared'
-
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'
 
 interface Props {
   user: AdminUser
@@ -79,9 +78,9 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
 
     // Sync planIds to API store so the web app picks them up on next login
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await adminFetch('/api/admin/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: user.id, email: user.email, planIds: grantPlans }),
       })
       if (!res.ok) {

@@ -86,6 +86,9 @@ export function SmtpSettings({ config, onChange }: Props) {
             autoComplete="new-password"
             onChange={(e) => set('pass', e.target.value)}
           />
+          <span className="settings-hint">
+            Por segurança, a senha salva aparece mascarada. Deixe como está para manter a atual; digite uma nova para trocar.
+          </span>
         </div>
 
         <div className="settings-divider">Identidade do remetente</div>

@@ -1,9 +1,12 @@
 // ── Admin session ──────────────────────────────────────────
+// Guarda APENAS o token de sessão emitido pelo backend
+// (aleatório, revogável, expira em 8h). Nenhum secret ou
+// credencial fixa é armazenada no navegador.
 
 const SESSION_KEY = 'vs_admin_session'
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000 // 8 hours
 
 interface AdminSession {
+  token: string
   expiresAt: number
 }
 
@@ -12,7 +15,7 @@ export function loadAdminSession(): AdminSession | null {
     const raw = localStorage.getItem(SESSION_KEY)
     if (!raw) return null
     const session = JSON.parse(raw) as AdminSession
-    if (Date.now() > session.expiresAt) {
+    if (!session.token || Date.now() > session.expiresAt) {
       clearAdminSession()
       return null
     }
@@ -22,8 +25,12 @@ export function loadAdminSession(): AdminSession | null {
   }
 }
 
-export function saveAdminSession(): void {
-  const session: AdminSession = { expiresAt: Date.now() + SESSION_DURATION_MS }
+export function getAdminToken(): string | null {
+  return loadAdminSession()?.token ?? null
+}
+
+export function saveAdminSession(token: string, expiresAt: number): void {
+  const session: AdminSession = { token, expiresAt }
   localStorage.setItem(SESSION_KEY, JSON.stringify(session))
 }
 

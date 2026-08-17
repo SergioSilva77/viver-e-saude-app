@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react'
 import { SmtpSettings } from './SmtpSettings'
+import { adminFetch } from '../lib/adminApi'
 import { loadSettings, saveSettings, type AppSettings } from './settingsTypes'
-
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
 type TestState = 'idle' | 'sending' | 'sent' | 'error'
 
 async function fetchSmtpFromBackend(): Promise<Partial<AppSettings['smtp']> | null> {
   try {
-    const res = await fetch('/api/admin/smtp-settings', {
-      headers: { 'x-admin-token': ADMIN_TOKEN },
-    })
+    const res = await adminFetch('/api/admin/smtp-settings')
     if (!res.ok) return null
     return (await res.json()) as Partial<AppSettings['smtp']>
   } catch {
@@ -21,12 +18,9 @@ async function fetchSmtpFromBackend(): Promise<Partial<AppSettings['smtp']> | nu
 
 async function syncSmtpToBackend(settings: AppSettings): Promise<void> {
   const { smtp } = settings
-  const res = await fetch('/api/admin/smtp-settings', {
+  const res = await adminFetch('/api/admin/smtp-settings', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-token': ADMIN_TOKEN,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       host:   smtp.host,
       port:   smtp.port,

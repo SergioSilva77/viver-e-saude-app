@@ -6,6 +6,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import Stripe from 'stripe'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { resolve, extname, basename } from 'node:path'
 import {
   getCatalog,
@@ -192,6 +193,35 @@ const upload = multer({
   },
 })
 
+// ── Admin session store (in-memory, 8h TTL) ───────────────
+const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000
+const adminSessions = new Map<string, number>() // token → expiresAt
+
+function isAdminSessionValid(token: string): boolean {
+  const expiresAt = adminSessions.get(token)
+  if (!expiresAt) return false
+  if (expiresAt < Date.now()) {
+    adminSessions.delete(token)
+    return false
+  }
+  return true
+}
+
+// ── Admin login rate limiting (per IP) ─────────────────────
+const ADMIN_LOGIN_MAX_FAILS = 5
+const ADMIN_LOGIN_LOCK_MS = 15 * 60 * 1000
+const adminLoginFails = new Map<string, { count: number; lockedUntil: number }>()
+
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ba.length !== bb.length) {
+    timingSafeEqual(ba, ba) // constant-time even on length mismatch
+    return false
+  }
+  return timingSafeEqual(ba, bb)
+}
+
 // ── Helpers ────────────────────────────────────────────────
 function requireAdminToken(
   req: express.Request,
@@ -199,8 +229,8 @@ function requireAdminToken(
   next: express.NextFunction,
 ): void {
   const token = req.headers['x-admin-token']
-  if (token !== config.adminApiSecret) {
-    res.status(401).json({ message: 'Token de administrador inválido.' })
+  if (typeof token !== 'string' || !isAdminSessionValid(token)) {
+    res.status(401).json({ message: 'Sessão expirada. Faça login novamente.' })
     return
   }
   next()
@@ -259,6 +289,54 @@ app.get(['/health', '/api/health'], (_req, res) => {
     aiConfigured: aiConfig !== null,
     aiProvider: aiConfig?.provider ?? null,
   })
+})
+
+// ── Admin: auth (login/logout com sessão real) ─────────────
+app.post('/api/admin/login', (req, res) => {
+  const { email, password } = (req.body ?? {}) as { email?: string; password?: string }
+  const ip = req.ip ?? 'unknown'
+
+  const fail = adminLoginFails.get(ip)
+  if (fail && fail.lockedUntil > Date.now()) {
+    const retryAfterSec = Math.ceil((fail.lockedUntil - Date.now()) / 1000)
+    res.status(429).json({
+      message: `Muitas tentativas incorretas. Aguarde ${Math.ceil(retryAfterSec / 60)} min.`,
+      retryAfterSec,
+    })
+    return
+  }
+
+  const configured = Boolean(config.adminEmail && config.adminPassword)
+  const emailOk = safeEqual(
+    String(email ?? '').trim().toLowerCase(),
+    (config.adminEmail || '∅').toLowerCase(),
+  )
+  const passOk = safeEqual(String(password ?? ''), config.adminPassword || '∅')
+
+  if (!configured || !emailOk || !passOk) {
+    const cur = adminLoginFails.get(ip) ?? { count: 0, lockedUntil: 0 }
+    cur.count++
+    if (cur.count >= ADMIN_LOGIN_MAX_FAILS) {
+      cur.lockedUntil = Date.now() + ADMIN_LOGIN_LOCK_MS
+      cur.count = 0
+    }
+    adminLoginFails.set(ip, cur)
+    res.status(401).json({ message: 'E-mail ou senha incorretos.' })
+    return
+  }
+
+  adminLoginFails.delete(ip)
+  const token = randomBytes(32).toString('hex')
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS
+  adminSessions.set(token, expiresAt)
+  console.log('[Admin] Login realizado:', email)
+  res.json({ ok: true, token, expiresAt })
+})
+
+app.post('/api/admin/logout', (req, res) => {
+  const token = req.headers['x-admin-token']
+  if (typeof token === 'string') adminSessions.delete(token)
+  res.json({ ok: true })
 })
 
 // ── Catalog ────────────────────────────────────────────────
@@ -585,7 +663,7 @@ app.delete('/api/admin/community-links/:id', requireAdminToken, async (req, res)
 })
 
 // ── Admin grants ───────────────────────────────────────────
-app.post('/api/admin/access-grants', async (req, res) => {
+app.post('/api/admin/access-grants', requireAdminToken, async (req, res) => {
   try {
     const payload = grantSchema.parse(req.body)
     res.status(201).json({
@@ -597,10 +675,49 @@ app.post('/api/admin/access-grants', async (req, res) => {
   }
 })
 
-// ── AI: save settings ──────────────────────────────────────
+// ── Secret masking ─────────────────────────────────────────
+// GET endpoints nunca retornam secrets reais — só o placeholder.
+// No POST, valor igual ao placeholder (ou vazio) = manter o valor atual.
+const SECRET_MASK = '••••••••'
+const mask = (v: string | undefined): string => (v ? SECRET_MASK : '')
+const keepIfMasked = (incoming: string, current: string): string =>
+  !incoming || incoming === SECRET_MASK ? current : incoming
+
+// ── AI: read / save settings ───────────────────────────────
+app.get('/api/admin/ai-settings', requireAdminToken, (_req, res) => {
+  try {
+    if (!existsSync(AI_CONFIG_PATH)) {
+      res.json({ provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' })
+      return
+    }
+    const raw = JSON.parse(readFileSync(AI_CONFIG_PATH, 'utf-8')) as {
+      provider?: string
+      apiKey?: string
+      model?: string
+    }
+    res.json({
+      provider: raw.provider ?? 'claude',
+      apiKey: mask(raw.apiKey),
+      model: raw.model ?? '',
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao ler configurações de IA.' })
+  }
+})
+
 app.post('/api/admin/ai-settings', requireAdminToken, (req, res) => {
   try {
-    const payload = aiSettingsSchema.parse(req.body)
+    const body = (req.body ?? {}) as { provider?: string; apiKey?: string; model?: string }
+    let current: { apiKey?: string } = {}
+    if (existsSync(AI_CONFIG_PATH)) {
+      current = JSON.parse(readFileSync(AI_CONFIG_PATH, 'utf-8'))
+    }
+    const merged = {
+      provider: body.provider,
+      apiKey: keepIfMasked(String(body.apiKey ?? ''), current.apiKey ?? ''),
+      model: body.model,
+    }
+    const payload = aiSettingsSchema.parse(merged)
     writeFileSync(AI_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf-8')
     res.json({ ok: true, message: 'Configurações de IA salvas no servidor.' })
   } catch (error) {
@@ -608,10 +725,41 @@ app.post('/api/admin/ai-settings', requireAdminToken, (req, res) => {
   }
 })
 
-// ── Stripe: save settings ─────────────────────────────────
+// ── Stripe: read / save settings ───────────────────────────
+app.get('/api/admin/stripe-settings', requireAdminToken, (_req, res) => {
+  try {
+    if (!existsSync(STRIPE_CONFIG_PATH)) {
+      res.json({ secretKey: '', webhookSecret: '', priceIdNivel1: '', priceIdNivel2: '', priceIdNivel3: '' })
+      return
+    }
+    const raw = JSON.parse(readFileSync(STRIPE_CONFIG_PATH, 'utf-8')) as Partial<StripeFileConfig>
+    res.json({
+      secretKey:      mask(raw.secretKey),
+      webhookSecret:  mask(raw.webhookSecret),
+      priceIdNivel1:  raw.priceIdNivel1  ?? '',
+      priceIdNivel2:  raw.priceIdNivel2  ?? '',
+      priceIdNivel3:  raw.priceIdNivel3  ?? '',
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao ler configurações do Stripe.' })
+  }
+})
+
 app.post('/api/admin/stripe-settings', requireAdminToken, (req, res) => {
   try {
-    const payload = stripeSettingsSchema.parse(req.body) satisfies StripeFileConfig
+    const body = (req.body ?? {}) as Partial<StripeFileConfig>
+    let current: Partial<StripeFileConfig> = {}
+    if (existsSync(STRIPE_CONFIG_PATH)) {
+      current = JSON.parse(readFileSync(STRIPE_CONFIG_PATH, 'utf-8'))
+    }
+    const merged = {
+      secretKey:      keepIfMasked(String(body.secretKey ?? ''), current.secretKey ?? ''),
+      webhookSecret:  keepIfMasked(String(body.webhookSecret ?? ''), current.webhookSecret ?? ''),
+      priceIdNivel1:  String(body.priceIdNivel1 ?? ''),
+      priceIdNivel2:  String(body.priceIdNivel2 ?? ''),
+      priceIdNivel3:  String(body.priceIdNivel3 ?? ''),
+    }
+    const payload = stripeSettingsSchema.parse(merged) satisfies StripeFileConfig
     writeFileSync(STRIPE_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf-8')
     res.json({ ok: true, message: 'Configurações do Stripe salvas no servidor.' })
   } catch (error) {
@@ -632,7 +780,7 @@ app.get('/api/admin/smtp-settings', requireAdminToken, (_req, res) => {
       port:   raw.port   ?? 587,
       secure: raw.secure ?? false,
       user:   raw.user   ?? '',
-      pass:   raw.pass   ?? '',
+      pass:   mask(raw.pass),
       from:   raw.from   ?? '',
     })
   } catch (error) {
@@ -642,7 +790,20 @@ app.get('/api/admin/smtp-settings', requireAdminToken, (_req, res) => {
 
 app.post('/api/admin/smtp-settings', requireAdminToken, (req, res) => {
   try {
-    const payload = smtpSettingsSchema.parse(req.body) satisfies SmtpFileConfig
+    const body = (req.body ?? {}) as Partial<SmtpFileConfig>
+    let current: Partial<SmtpFileConfig> = {}
+    if (existsSync(SMTP_CONFIG_PATH)) {
+      current = JSON.parse(readFileSync(SMTP_CONFIG_PATH, 'utf-8'))
+    }
+    const merged = {
+      host:   String(body.host ?? ''),
+      port:   body.port ?? 587,
+      secure: body.secure ?? false,
+      user:   String(body.user ?? ''),
+      pass:   keepIfMasked(String(body.pass ?? ''), current.pass ?? ''),
+      from:   String(body.from ?? ''),
+    }
+    const payload = smtpSettingsSchema.parse(merged) satisfies SmtpFileConfig
     writeFileSync(SMTP_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf-8')
     res.json({ ok: true, message: 'Configurações de e-mail salvas no servidor.' })
   } catch (error) {

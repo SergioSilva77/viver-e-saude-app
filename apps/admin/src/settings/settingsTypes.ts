@@ -251,5 +251,17 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+  // SEGURANÇA: secrets (chaves de API, senhas) NUNCA são persistidos
+  // no navegador. Eles vivem apenas no servidor (.json no backend).
+  // Aqui só guardamos preferências não-sensíveis (modelos, provedor,
+  // price IDs, host/porta, duração de sessão).
+  const safe = structuredClone(settings)
+  safe.stripe.secretKey = ''
+  safe.stripe.webhookSecret = ''
+  safe.smtp.pass = ''
+  safe.ai.claude.apiKey = ''
+  safe.ai.gemini.apiKey = ''
+  safe.ai.mimo.apiKey = ''
+  safe.ai.mimoFree.apiKey = ''
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(safe))
 }

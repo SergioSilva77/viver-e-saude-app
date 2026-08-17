@@ -9,12 +9,11 @@ import { TokenUsagePage } from './settings/TokenUsagePage'
 import { CommunityPage } from './CommunityPage'
 import { RecipesPage } from './RecipesPage'
 import { AdminLogin } from './auth/AdminLogin'
-import { loadAdminSession, clearAdminSession } from './auth/adminSession'
+import { loadAdminSession, clearAdminSession, getAdminToken } from './auth/adminSession'
+import { adminFetch } from './lib/adminApi'
 import { ALL_RESOURCES, type AdminSection, type AdminUser } from './types'
 import type { PlanId } from '@viver-saude/shared'
 import './App.css'
-
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'
 
 interface ApiUser {
   id: string
@@ -84,9 +83,7 @@ function App() {
   async function fetchUsersFromApi() {
     try {
       setUsersLoading(true)
-      const res = await fetch('/api/admin/users', {
-        headers: { 'x-admin-token': ADMIN_TOKEN },
-      })
+      const res = await adminFetch('/api/admin/users')
       if (!res.ok) throw new Error('Falha ao carregar usuários.')
       const data = (await res.json()) as { users?: ApiUser[] }
       setUsers((data.users ?? []).map(apiUserToAdminUser))
@@ -108,6 +105,14 @@ function App() {
   }
 
   function handleLogout() {
+    // Revoga a sessão no servidor (fire-and-forget) e limpa localmente
+    const token = getAdminToken()
+    if (token) {
+      fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: { 'x-admin-token': token },
+      }).catch(() => {})
+    }
     clearAdminSession()
     setAuthed(false)
   }
@@ -217,7 +222,7 @@ function App() {
           {/* ── RECEITAS ─────────────────────────────────── */}
           {activeSection === 'receitas' && (
             <RecipesPage
-              adminToken={import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'}
+              adminToken={getAdminToken() ?? ''}
             />
           )}
 
@@ -256,14 +261,14 @@ function App() {
           {activeSection === 'tokens' && (
             <TokenUsagePage
               apiUrl=""
-              adminToken={import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'}
+              adminToken={getAdminToken() ?? ''}
             />
           )}
 
           {/* ── COMUNIDADE ───────────────────────────────── */}
           {activeSection === 'comunidade' && (
             <CommunityPage
-              adminToken={import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'}
+              adminToken={getAdminToken() ?? ''}
             />
           )}
         </div>

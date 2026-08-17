@@ -1,21 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { saveAdminSession } from './adminSession'
-import { getLockStatus, recordFailure, resetLockout } from './rateLimiter'
-import { logger } from '../lib/logger'
-
-// Credentials come exclusively from environment variables — nothing hardcoded.
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD as string | undefined
-
-const configMissing = !ADMIN_EMAIL || !ADMIN_PASSWORD
-
-// Log technical detail to file only — never to the browser console or UI.
-if (configMissing) {
-  logger.error(
-    'Credenciais nao configuradas. Crie apps/admin/.env com VITE_ADMIN_EMAIL e VITE_ADMIN_PASSWORD.',
-    'AdminLogin',
-  )
-}
 
 interface Props {
   onLogin: () => void
@@ -40,14 +24,14 @@ export function AdminLogin({ onLogin }: Props) {
   const [remainingMs, setRemainingMs] = useState(0)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Sync countdown with real remaining time every 250ms
-  function startCountdown(initialMs: number) {
-    setRemainingMs(initialMs)
+  function startCountdown(totalMs: number) {
+    setRemainingMs(totalMs)
     if (countdownRef.current) clearInterval(countdownRef.current)
+    const startedAt = Date.now()
     countdownRef.current = setInterval(() => {
-      const status = getLockStatus()
-      setRemainingMs(status.remainingMs)
-      if (!status.locked) {
+      const left = totalMs - (Date.now() - startedAt)
+      setRemainingMs(Math.max(0, left))
+      if (left <= 0) {
         clearInterval(countdownRef.current!)
         countdownRef.current = null
         setErrorMsg('')
@@ -55,35 +39,16 @@ export function AdminLogin({ onLogin }: Props) {
     }, 250)
   }
 
-  // Restore lockout state on mount (survives page reload)
   useEffect(() => {
-    const status = getLockStatus()
-    if (status.locked) {
-      setErrorMsg(buildLockMessage(status.remainingMs))
-      startCountdown(status.remainingMs)
-    }
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current)
     }
   }, [])
 
-  function buildLockMessage(ms: number): string {
-    return `Muitas tentativas incorretas. Aguarde ${formatCountdown(ms)} antes de tentar novamente.`
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (configMissing) {
-      setErrorMsg('Serviço indisponível. Contate o suporte técnico.')
-      return
-    }
-
-    const status = getLockStatus()
-    if (status.locked) {
-      setErrorMsg(buildLockMessage(status.remainingMs))
-      return
-    }
+    if (remainingMs > 0) return
 
     if (!email || !password) {
       setErrorMsg('Preencha e-mail e senha.')
@@ -93,32 +58,39 @@ export function AdminLogin({ onLogin }: Props) {
     setLoading(true)
     setErrorMsg('')
 
-    // Constant-time comparison to prevent timing attacks
-    await new Promise((r) => setTimeout(r, 400))
-
-    const emailMatch = email.trim().toLowerCase() === ADMIN_EMAIL!.toLowerCase()
-    const passMatch = password === ADMIN_PASSWORD!
-
-    if (!emailMatch || !passMatch) {
-      const next = recordFailure()
-      logger.warn(
-        `Tentativa de login falhou. Tentativas: ${next.attempts}. Bloqueado: ${next.locked}.`,
-        'AdminLogin',
-      )
-      if (next.locked) {
-        setErrorMsg(buildLockMessage(next.remainingMs))
-        startCountdown(next.remainingMs)
-      } else {
-        // Generic message — does not reveal attempt count or lockout threshold
-        setErrorMsg('E-mail ou senha incorretos.')
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean
+        token?: string
+        expiresAt?: number
+        message?: string
+        retryAfterSec?: number
       }
-      setLoading(false)
-      return
-    }
 
-    resetLockout()
-    saveAdminSession()
-    onLogin()
+      if (res.status === 429) {
+        const waitMs = (data.retryAfterSec ?? 900) * 1000
+        setErrorMsg(data.message ?? 'Muitas tentativas. Aguarde antes de tentar novamente.')
+        startCountdown(waitMs)
+        return
+      }
+
+      if (!res.ok || !data.token || !data.expiresAt) {
+        setErrorMsg(data.message ?? 'E-mail ou senha incorretos.')
+        return
+      }
+
+      saveAdminSession(data.token, data.expiresAt)
+      onLogin()
+    } catch {
+      setErrorMsg('Falha de conexão com o servidor. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const isLocked = remainingMs > 0
@@ -185,14 +157,6 @@ export function AdminLogin({ onLogin }: Props) {
           </div>
         </div>
 
-        {/* Generic unavailability notice — reveals no internal detail */}
-        {configMissing && (
-          <div className="admin-login-unavailable">
-            <i className="bi bi-slash-circle" />
-            <span>Serviço temporariamente indisponível.</span>
-          </div>
-        )}
-
         {/* Form */}
         <form className="admin-login-form" onSubmit={handleSubmit} noValidate>
           <div className="admin-login-field">
@@ -247,7 +211,7 @@ export function AdminLogin({ onLogin }: Props) {
           <button
             type="submit"
             className="admin-login-btn"
-            disabled={isLocked || loading || configMissing}
+            disabled={isLocked || loading}
           >
             {loading ? (
               <span className="admin-login-spinner" />

@@ -1,19 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StripeSettings } from './StripeSettings'
+import { adminFetch } from '../lib/adminApi'
 import { loadSettings, saveSettings, type AppSettings } from './settingsTypes'
-
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
 
+async function fetchStripeFromBackend(): Promise<Partial<AppSettings['stripe']> | null> {
+  try {
+    const res = await adminFetch('/api/admin/stripe-settings')
+    if (!res.ok) return null
+    return (await res.json()) as Partial<AppSettings['stripe']>
+  } catch {
+    return null
+  }
+}
+
 async function syncStripeSettingsToBackend(settings: AppSettings): Promise<void> {
   const { stripe } = settings
-  await fetch('/api/admin/stripe-settings', {
+  const res = await adminFetch('/api/admin/stripe-settings', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-token': ADMIN_TOKEN,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       secretKey:     stripe.secretKey,
       webhookSecret: stripe.webhookSecret,
@@ -22,11 +28,24 @@ async function syncStripeSettingsToBackend(settings: AppSettings): Promise<void>
       priceIdNivel3: stripe.priceIdNivel3,
     }),
   })
+  if (!res.ok) throw new Error('Falha ao salvar no servidor.')
 }
 
 export function StripeSettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [syncState, setSyncState] = useState<SyncState>('idle')
+
+  // Carrega a config atual do servidor (com secrets mascarados) ao abrir a página
+  useEffect(() => {
+    fetchStripeFromBackend().then((serverCfg) => {
+      if (serverCfg) {
+        setSettings((s) => ({
+          ...s,
+          stripe: { ...s.stripe, ...serverCfg },
+        }))
+      }
+    })
+  }, [])
 
   async function handleSave() {
     saveSettings(settings)

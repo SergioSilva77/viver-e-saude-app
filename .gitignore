@@ -12,3 +12,5 @@ Thumbs.db
 *.bak
 ssh.txt
 .env-test.env
+
+sen.txt

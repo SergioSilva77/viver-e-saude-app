@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { plans, getEffectivePlanId } from '@viver-saude/shared'
+import { adminFetch } from './lib/adminApi'
 import { ALL_RESOURCES, type AdminUser } from './types'
 import type { PlanId } from '@viver-saude/shared'
-
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? 'vs-admin-dev'
 
 async function syncUserToApi(user: {
   id: string
@@ -13,9 +12,9 @@ async function syncUserToApi(user: {
   password: string
 }): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch('/api/admin/users', {
+    const res = await adminFetch('/api/admin/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-token': ADMIN_TOKEN },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(user),
     })
     const data = await res.json()

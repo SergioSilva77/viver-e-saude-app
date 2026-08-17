@@ -62,9 +62,11 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   adminUrl: process.env.ADMIN_URL ?? 'http://localhost:5174',
+  appScheme: process.env.APP_SCHEME ?? 'viversaude',
   supabaseUrl: process.env.SUPABASE_URL ?? '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-  adminApiSecret: process.env.ADMIN_API_SECRET ?? 'vs-admin-dev',
+  adminEmail: process.env.ADMIN_EMAIL ?? '',
+  adminPassword: process.env.ADMIN_PASSWORD ?? '',
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/viversaude',
 }
 
