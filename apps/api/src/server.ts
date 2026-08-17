@@ -311,7 +311,7 @@ app.post('/api/admin/login', (req, res) => {
     String(email ?? '').trim().toLowerCase(),
     (config.adminEmail || '∅').toLowerCase(),
   )
-  const passOk = safeEqual(String(password ?? ''), config.adminPassword || '∅')
+  const passOk = safeEqual(String(password ?? '').trim(), config.adminPassword || '∅')
 
   if (!configured || !emailOk || !passOk) {
     const cur = adminLoginFails.get(ip) ?? { count: 0, lockedUntil: 0 }
