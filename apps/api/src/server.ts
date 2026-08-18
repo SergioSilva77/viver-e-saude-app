@@ -21,7 +21,7 @@ import { getPlan } from '@viver-saude/shared'
 import { config, getStripeConfig, hasStripeConfig, getAiConfig, type StripeFileConfig, type SmtpFileConfig } from './config.js'
 import { chat, type ChatMessage, type UserProfile } from './ai.js'
 import { recordUsage, getUsageStats, setQuota } from './tokenTracker.js'
-import { listUsers, upsertUser, removeUser, findByEmail } from './userStore.js'
+import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary } from './userStore.js'
 import { createResetToken, consumeResetToken } from './resetTokenStore.js'
 import { sendPasswordResetLink } from './emailService.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
@@ -126,6 +126,7 @@ const aiSettingsSchema = z.object({
   provider: z.enum(['claude', 'gemini', 'mimo', 'mimo-free']),
   apiKey: z.string().min(10),
   model: z.string().min(3),
+  rememberPersonSummary: z.boolean().default(false),
 })
 
 const stripeSettingsSchema = z.object({
@@ -264,10 +265,16 @@ function requireAdminToken(
 // ── App ────────────────────────────────────────────────────
 const app = express()
 
-// ── Migration: add photo_url column if missing ────────────
+// ── Migration: add columns if missing ───────────────────────
 import('./db.js').then(({ query: dbQuery }) => {
   dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR DEFAULT ''")
     .then(() => console.log('[DB] photo_url column ensured'))
+    .catch(() => { /* column already exists or DB not ready */ })
+  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS health_profile JSONB DEFAULT '{}'")
+    .then(() => console.log('[DB] health_profile column ensured'))
+    .catch(() => { /* column already exists or DB not ready */ })
+  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS person_summary TEXT DEFAULT ''")
+    .then(() => console.log('[DB] person_summary column ensured'))
     .catch(() => { /* column already exists or DB not ready */ })
 })
 
@@ -720,18 +727,20 @@ const keepIfMasked = (incoming: string, current: string): string =>
 app.get('/api/admin/ai-settings', requireAdminToken, (_req, res) => {
   try {
     if (!existsSync(AI_CONFIG_PATH)) {
-      res.json({ provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5' })
+      res.json({ provider: 'claude', apiKey: '', model: 'claude-sonnet-4-5', rememberPersonSummary: false })
       return
     }
     const raw = JSON.parse(readFileSync(AI_CONFIG_PATH, 'utf-8')) as {
       provider?: string
       apiKey?: string
       model?: string
+      rememberPersonSummary?: boolean
     }
     res.json({
       provider: raw.provider ?? 'claude',
       apiKey: mask(raw.apiKey),
       model: raw.model ?? '',
+      rememberPersonSummary: raw.rememberPersonSummary ?? false,
     })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao ler configurações de IA.' })
@@ -740,8 +749,8 @@ app.get('/api/admin/ai-settings', requireAdminToken, (_req, res) => {
 
 app.post('/api/admin/ai-settings', requireAdminToken, (req, res) => {
   try {
-    const body = (req.body ?? {}) as { provider?: string; apiKey?: string; model?: string }
-    let current: { apiKey?: string } = {}
+    const body = (req.body ?? {}) as { provider?: string; apiKey?: string; model?: string; rememberPersonSummary?: boolean }
+    let current: { apiKey?: string; rememberPersonSummary?: boolean } = {}
     if (existsSync(AI_CONFIG_PATH)) {
       current = JSON.parse(readFileSync(AI_CONFIG_PATH, 'utf-8'))
     }
@@ -749,6 +758,7 @@ app.post('/api/admin/ai-settings', requireAdminToken, (req, res) => {
       provider: body.provider,
       apiKey: keepIfMasked(String(body.apiKey ?? ''), current.apiKey ?? ''),
       model: body.model,
+      rememberPersonSummary: body.rememberPersonSummary ?? current.rememberPersonSummary ?? false,
     }
     const payload = aiSettingsSchema.parse(merged)
     writeFileSync(AI_CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf-8')
@@ -948,12 +958,53 @@ app.post('/api/ai/chat', async (req, res) => {
     const lastUserMessage = [...payload.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
     const knowledgeContent = selectRelevantFiles(lastUserMessage)
 
+    // Fetch user context if rememberPersonSummary is enabled
+    let personSummary: string | undefined
+    let healthProfile: Record<string, unknown> | undefined
+    if (aiConfig.rememberPersonSummary && payload.userId) {
+      const user = await findById(payload.userId)
+      if (user) {
+        personSummary = user.personSummary || undefined
+        healthProfile = user.healthProfile || undefined
+      }
+    }
+
     const result = await chat(
       payload.messages as ChatMessage[],
       payload.userProfile as UserProfile | undefined,
       knowledgeContent,
       aiConfig,
+      {
+        personSummary,
+        healthProfile,
+        rememberPersonSummary: aiConfig.rememberPersonSummary,
+      },
     )
+
+    // Intercept update markers and process them
+    let reply = result.reply
+    
+    // Health profile update marker
+    const healthMatch = reply.match(/\[UPDATE_HEALTH_PROFILE:\s*(\{[\s\S]*?\})\]/)
+    if (healthMatch && payload.userId) {
+      try {
+        const patch = JSON.parse(healthMatch[1]) as Record<string, unknown>
+        await updateHealthProfile(payload.userId, patch)
+        console.log('[AI] Updated health profile for user', payload.userId, patch)
+      } catch (e) {
+        console.error('[AI] Failed to parse health profile update:', e)
+      }
+      reply = reply.replace(/\[UPDATE_HEALTH_PROFILE:\s*\{[\s\S]*?\}\]/, '')
+    }
+
+    // Person summary update marker
+    const summaryMatch = reply.match(/\[UPDATE_PERSON_SUMMARY:\s*"([^"]*)"\]/)
+    if (summaryMatch && payload.userId) {
+      const newSummary = summaryMatch[1]
+      await updatePersonSummary(payload.userId, newSummary)
+      console.log('[AI] Updated person summary for user', payload.userId)
+      reply = reply.replace(/\[UPDATE_PERSON_SUMMARY:\s*"[^"]*"\]/, '')
+    }
 
     // Save messages to DB if chatId is provided (fire-and-forget)
     if (payload.chatId && payload.userId) {
@@ -961,7 +1012,7 @@ app.post('/api/ai/chat', async (req, res) => {
       setImmediate(async () => {
         try {
           await addMessage(payload.chatId!, lastMsg.role as 'user' | 'assistant', lastMsg.content)
-          await addMessage(payload.chatId!, 'assistant', result.reply)
+          await addMessage(payload.chatId!, 'assistant', reply)
         } catch (e) {
           console.error('[Chat Persistence Error]', e)
         }
@@ -981,7 +1032,7 @@ app.post('/api/ai/chat', async (req, res) => {
       }).catch(() => { /* non-critical */ })
     })
 
-    res.json({ reply: result.reply })
+    res.json({ reply })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Erro ao processar mensagem.'
     // Do not leak internal error details to the client
@@ -1373,6 +1424,7 @@ app.get('/api/user/me', async (req, res) => {
       planIds: row.plan_ids ?? [],
       planExpiresAt: row.plan_expires_at ?? {},
       healthProfile: (row as Record<string, unknown>).health_profile ?? null,
+      personSummary: (row as Record<string, unknown>).person_summary ?? '',
     })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar perfil.' })
@@ -1400,6 +1452,38 @@ app.put('/api/user/profile', async (req, res) => {
     res.json({ ok: true, message: 'Perfil atualizado.' })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar perfil.' })
+  }
+})
+
+// ── Health profile update (called by IA) ─────────────────────
+app.put('/api/user/:id/health-profile', async (req, res) => {
+  try {
+    const userId = String(req.params.id)
+    const patch = (req.body ?? {}) as Record<string, unknown>
+    if (!userId || typeof patch !== 'object') {
+      res.status(400).json({ message: 'Dados inválidos.' })
+      return
+    }
+    await updateHealthProfile(userId, patch)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar perfil.' })
+  }
+})
+
+// ── Person summary update (called by IA) ─────────────────────
+app.put('/api/user/:id/person-summary', async (req, res) => {
+  try {
+    const userId = String(req.params.id)
+    const { summary } = (req.body ?? {}) as { summary?: string }
+    if (!userId || typeof summary !== 'string') {
+      res.status(400).json({ message: 'Dados inválidos.' })
+      return
+    }
+    await updatePersonSummary(userId, summary)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar resumo.' })
   }
 })
 

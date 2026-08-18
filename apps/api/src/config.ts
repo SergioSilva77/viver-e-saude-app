@@ -133,6 +133,7 @@ export function getAiConfig(): AiConfig | null {
 
   let apiKey = fileConfig.apiKey ?? ''
   let model = fileConfig.model ?? 'claude-sonnet-4-5'
+  const rememberPersonSummary = fileConfig.rememberPersonSummary ?? false
 
   if (provider === 'mimo' || provider === 'mimo-free') {
     apiKey = process.env.OPENROUTER_API_KEY ?? apiKey
@@ -147,5 +148,5 @@ export function getAiConfig(): AiConfig | null {
 
   if (!apiKey) return null
 
-  return { provider, apiKey, model }
+  return { provider, apiKey, model, rememberPersonSummary }
 }

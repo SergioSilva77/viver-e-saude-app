@@ -9,6 +9,8 @@ export interface StoredUser {
   planIds: string[]
   password: string
   photoUrl?: string
+  healthProfile?: Record<string, unknown>
+  personSummary?: string
   planExpiresAt?: Record<string, string>
   subscriptionIds?: Record<string, string>
   planCancelledAt?: Record<string, string>
@@ -20,6 +22,8 @@ interface UserRow {
   email: string
   password: string
   photo_url: string
+  health_profile: Record<string, unknown>
+  person_summary: string
   plan_ids: string[]
   plan_expires_at: Record<string, string>
   subscription_ids: Record<string, string>
@@ -33,6 +37,8 @@ function rowToUser(row: UserRow): StoredUser {
     email: row.email,
     password: row.password,
     photoUrl: row.photo_url || undefined,
+    healthProfile: row.health_profile || {},
+    personSummary: row.person_summary || '',
     planIds: row.plan_ids ?? [],
     planExpiresAt: row.plan_expires_at ?? {},
     subscriptionIds: row.subscription_ids ?? {},
@@ -56,6 +62,8 @@ export async function upsertUser(
     planIds: data.planIds ?? existing?.planIds ?? [],
     password: data.password ?? existing?.password ?? '',
     photoUrl: data.photoUrl ?? existing?.photoUrl,
+    healthProfile: data.healthProfile ?? existing?.healthProfile ?? {},
+    personSummary: data.personSummary ?? existing?.personSummary ?? '',
     ...existing,
     id: data.id,
     email: data.email,
@@ -63,6 +71,8 @@ export async function upsertUser(
     ...(data.planIds !== undefined ? { planIds: data.planIds } : {}),
     ...(data.password !== undefined ? { password: data.password } : {}),
     ...(data.photoUrl !== undefined ? { photoUrl: data.photoUrl } : {}),
+    ...(data.healthProfile !== undefined ? { healthProfile: { ...(existing?.healthProfile ?? {}), ...data.healthProfile } } : {}),
+    ...(data.personSummary !== undefined ? { personSummary: data.personSummary } : {}),
     ...(data.planExpiresAt !== undefined
       ? { planExpiresAt: { ...(existing?.planExpiresAt ?? {}), ...data.planExpiresAt } }
       : {}),
@@ -75,13 +85,15 @@ export async function upsertUser(
   }
 
   await query(
-    `INSERT INTO users (id, full_name, email, password, photo_url, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO users (id, full_name, email, password, photo_url, health_profile, person_summary, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (id) DO UPDATE SET
        full_name = EXCLUDED.full_name,
        email = EXCLUDED.email,
        password = EXCLUDED.password,
        photo_url = EXCLUDED.photo_url,
+       health_profile = EXCLUDED.health_profile,
+       person_summary = EXCLUDED.person_summary,
        plan_ids = EXCLUDED.plan_ids,
        plan_expires_at = EXCLUDED.plan_expires_at,
        subscription_ids = EXCLUDED.subscription_ids,
@@ -92,6 +104,8 @@ export async function upsertUser(
       merged.email,
       merged.password,
       merged.photoUrl ?? '',
+      JSON.stringify(merged.healthProfile),
+      merged.personSummary,
       JSON.stringify(merged.planIds),
       JSON.stringify(merged.planExpiresAt),
       JSON.stringify(merged.subscriptionIds),
@@ -109,4 +123,20 @@ export async function removeUser(id: string): Promise<void> {
 export async function findByEmail(email: string): Promise<StoredUser | null> {
   const { rows } = await query<UserRow>('SELECT * FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [email])
   return rows.length > 0 ? rowToUser(rows[0]) : null
+}
+
+export async function findById(id: string): Promise<StoredUser | null> {
+  const { rows } = await query<UserRow>('SELECT * FROM users WHERE id = $1 LIMIT 1', [id])
+  return rows.length > 0 ? rowToUser(rows[0]) : null
+}
+
+export async function updateHealthProfile(id: string, patch: Record<string, unknown>): Promise<void> {
+  const existing = await findById(id)
+  if (!existing) return
+  const merged = { ...(existing.healthProfile ?? {}), ...patch }
+  await query('UPDATE users SET health_profile = $1 WHERE id = $2', [JSON.stringify(merged), id])
+}
+
+export async function updatePersonSummary(id: string, summary: string): Promise<void> {
+  await query('UPDATE users SET person_summary = $1 WHERE id = $2', [summary, id])
 }

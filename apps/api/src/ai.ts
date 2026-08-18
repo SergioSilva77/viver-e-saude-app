@@ -21,6 +21,7 @@ export interface AiConfig {
   provider: 'claude' | 'gemini' | 'mimo' | 'mimo-free'
   apiKey: string
   model: string
+  rememberPersonSummary?: boolean
 }
 
 export interface TokenUsage {
@@ -35,7 +36,15 @@ export interface ChatResult {
 
 // ── System prompt ──────────────────────────────────────────
 
-export function buildSystemPrompt(profile: UserProfile | undefined, knowledgeContent: string[]): string {
+export function buildSystemPrompt(
+  profile: UserProfile | undefined,
+  knowledgeContent: string[],
+  options?: {
+    personSummary?: string
+    healthProfile?: Record<string, unknown>
+    rememberPersonSummary?: boolean
+  },
+): string {
   const profileSection = profile
     ? `
 ## Perfil do usuário
@@ -58,6 +67,31 @@ Use essas informações para personalizar suas orientações. Sempre mencione da
       ? `\n## Base de conhecimento\n${knowledgeContent.map((c, i) => `### Arquivo ${i + 1}\n${c}`).join('\n\n')}`
       : ''
 
+  const memorySection = options?.rememberPersonSummary
+    ? `
+## Conhecimento sobre esta pessoa
+${options.personSummary ?? 'Ainda não há informações suficientes sobre esta pessoa.'}
+
+## Perfil de saúde conhecido
+${formatHealthProfile(options.healthProfile)}
+`
+    : ''
+
+  const memoryInstructions = options?.rememberPersonSummary
+    ? `
+## Instruções especiais de memória
+- Você está CONSTRUINDO um conhecimento sobre esta pessoa ao longo do tempo
+- NÃO faça um interrogatório. Converse NATURALMENTE
+- Se faltar informação relevante, mencione CASUALMENTE: "Se quiser me contar mais sobre [X], posso te orientar melhor"
+- Quando a pessoa passar uma informação nova de saúde (peso, idade, condição), confirme sutilmente e atualize silenciosamente
+- Para atualizar o perfil de saúde, responda EXATAMENTE: [UPDATE_HEALTH_PROFILE: {"campo": "valor"}]
+- Após algumas conversas, quando tiver informações suficientes, pergunte: "Quer que eu faça um resumo sobre você para te conhecer melhor?"
+- Se ela confirmar, responda: [UPDATE_PERSON_SUMMARY: "resumo compacto aqui - máximo 400 caracteres"]
+- NÃO repita o resumo a cada resposta. Use-o como CONTEXTO INTERNO
+- Quando fizer sentido comparar com histórico, faça naturalmente: "Você já conseguiu emagrecer X kg antes, dá pra fazer de novo"
+`
+    : ''
+
   return `Você é o MeuGuardião, assistente de saúde e bem-estar do aplicativo Viver & Saúde.
 
 ## Sua personalidade
@@ -74,8 +108,33 @@ Use essas informações para personalizar suas orientações. Sempre mencione da
 - Priorize sempre a base de conhecimento fornecida. Quando não houver informação específica lá, use seu conhecimento geral de saúde.
 - Nunca invente resultados clínicos específicos. Se não souber, diga que recomenda consultar um profissional de saúde.
 
+${memoryInstructions}
+${memorySection}
 ${profileSection}
 ${knowledgeSection}`.trim()
+}
+
+function formatHealthProfile(profile?: Record<string, unknown>): string {
+  if (!profile || Object.keys(profile).length === 0) {
+    return 'Nenhum dado de saúde registrado ainda.'
+  }
+  const lines: string[] = []
+  if (profile.age !== undefined) lines.push(`- Idade: ${profile.age} anos`)
+  if (profile.weightKg !== undefined) lines.push(`- Peso: ${profile.weightKg} kg`)
+  if (profile.heightCm !== undefined) lines.push(`- Altura: ${profile.heightCm} cm`)
+  if (profile.sex) lines.push(`- Sexo: ${profile.sex}`)
+  if (profile.bloodType) lines.push(`- Tipo sanguíneo: ${profile.bloodType}`)
+  if (profile.goals && Array.isArray(profile.goals) && profile.goals.length > 0) {
+    lines.push(`- Objetivos: ${profile.goals.join(', ')}`)
+  }
+  if (profile.conditions && Array.isArray(profile.conditions) && profile.conditions.length > 0) {
+    lines.push(`- Condições: ${profile.conditions.join(', ')}`)
+  }
+  if (profile.medications && Array.isArray(profile.medications) && profile.medications.length > 0) {
+    lines.push(`- Medicamentos: ${profile.medications.join(', ')}`)
+  }
+  if (profile.lifestyle) lines.push(`- Estilo de vida: ${profile.lifestyle}`)
+  return lines.length > 0 ? lines.join('\n') : 'Nenhum dado de saúde registrado ainda.'
 }
 
 // ── Claude client ──────────────────────────────────────────
@@ -243,13 +302,20 @@ export async function callMiMoFree(
 
 // ── Dispatcher ─────────────────────────────────────────────
 
+export interface ChatOptions {
+  personSummary?: string
+  healthProfile?: Record<string, unknown>
+  rememberPersonSummary?: boolean
+}
+
 export async function chat(
   messages: ChatMessage[],
   userProfile: UserProfile | undefined,
   knowledgeContent: string[],
   aiConfig: AiConfig,
+  options?: ChatOptions,
 ): Promise<ChatResult> {
-  const systemPrompt = buildSystemPrompt(userProfile, knowledgeContent)
+  const systemPrompt = buildSystemPrompt(userProfile, knowledgeContent, options)
 
   // Keep only the last 10 messages to control context window cost
   const contextMessages = messages.slice(-10)

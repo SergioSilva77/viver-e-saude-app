@@ -11,7 +11,7 @@ const API_URL = ''
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
 
 async function syncAiSettingsToBackend(settings: AppSettings): Promise<void> {
-  const { activeProvider, claude, gemini, mimo, mimoFree } = settings.ai
+  const { activeProvider, claude, gemini, mimo, mimoFree, rememberPersonSummary } = settings.ai
   const activeConfig =
     activeProvider === 'claude' ? claude :
     activeProvider === 'gemini' ? gemini :
@@ -24,6 +24,7 @@ async function syncAiSettingsToBackend(settings: AppSettings): Promise<void> {
       provider: activeProvider,
       apiKey: activeConfig.apiKey,
       model: activeConfig.activeModel,
+      rememberPersonSummary,
     }),
   })
   if (!res.ok) throw new Error('Falha ao salvar no servidor.')
@@ -38,11 +39,12 @@ export function AiSettingsPage() {
   useEffect(() => {
     adminFetch('/api/admin/ai-settings')
       .then((res) => (res.ok ? res.json() : null))
-      .then((serverCfg: { provider?: AiProvider; apiKey?: string; model?: string } | null) => {
+      .then((serverCfg: { provider?: AiProvider; apiKey?: string; model?: string; rememberPersonSummary?: boolean } | null) => {
         if (!serverCfg?.provider) return
         setSettings((s) => {
           const ai = structuredClone(s.ai)
           ai.activeProvider = serverCfg.provider!
+          ai.rememberPersonSummary = serverCfg.rememberPersonSummary ?? false
           const cfg =
             ai.activeProvider === 'claude' ? ai.claude :
             ai.activeProvider === 'gemini' ? ai.gemini :

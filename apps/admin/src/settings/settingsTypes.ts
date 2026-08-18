@@ -91,6 +91,7 @@ export interface AiConfig {
   gemini: GeminiConfig
   mimo: MiMoConfig
   mimoFree: MiMoFreeConfig
+  rememberPersonSummary: boolean
 }
 
 export type SessionDurationDays = 1 | 7 | 15 | 30 | 60
@@ -229,6 +230,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       apiKey: '',
       activeModel: 'mimo-v2-pro-free',
     },
+    rememberPersonSummary: false,
   },
 }
 

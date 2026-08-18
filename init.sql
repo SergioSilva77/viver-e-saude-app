@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
   plan_ids JSONB DEFAULT '[]',
   plan_expires_at JSONB DEFAULT '{}',
   subscription_ids JSONB DEFAULT '{}',
-  plan_cancelled_at JSONB DEFAULT '{}'
+  plan_cancelled_at JSONB DEFAULT '{}',
+  health_profile JSONB DEFAULT '{}',
+  person_summary TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS community_links (

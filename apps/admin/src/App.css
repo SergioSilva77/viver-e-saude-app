@@ -2847,3 +2847,48 @@
   transition: background 0.15s;
 }
 .btn-outline:hover { background: #f6f4ec; }
+
+/* Toggle button */
+.toggle-btn {
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.5rem 1rem;
+  border: 1.5px solid #ece6d8;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.toggle-btn:hover { background: #f6f4ec; }
+.toggle-btn-on { background: #5a8672; border-color: #5a8672; }
+.toggle-btn-on:hover { background: #3d6153; }
+.toggle-slider {
+  width: 36px; height: 20px;
+  background: #ece6d8;
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.15s;
+}
+.toggle-btn-on .toggle-slider { background: #fff; }
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 16px; height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+.toggle-btn-on .toggle-slider::after { transform: translateX(16px); background: #fff; }
+.toggle-btn-on .toggle-slider::after { background: #5a8672; }
+.toggle-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #3d6153;
+}
+.toggle-btn-on .toggle-label { color: #fff; }
+.settings-hint {
+  font-size: 0.78rem;
+  color: #8fad9c;
+  margin: 0.3rem 0 0.6rem 0;
+  line-height: 1.4;
+}

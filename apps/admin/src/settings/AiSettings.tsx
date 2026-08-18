@@ -267,6 +267,33 @@ export function AiSettings({ config, onChange }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Memory settings */}
+      <div className="provider-section">
+        <div className="provider-section-label">
+          <i className="bi bi-brain" />
+          Memória do MeuGuardião
+        </div>
+
+        <div className="settings-fields">
+          <div className="settings-field">
+            <label className="settings-label">Lembrar contexto da pessoa</label>
+            <p className="settings-hint">
+              Quando ativado, a IA vai conhecendo a pessoa ao longo das conversas — nome, idade, peso,
+              objetivos, condições de saúde. Ela pergunta naturalmente, sem interrogatório,
+              e usa esse contexto para orientar melhor nas próximas conversas.
+            </p>
+            <button
+              type="button"
+              className={`toggle-btn ${config.rememberPersonSummary ? 'toggle-btn-on' : ''}`}
+              onClick={() => onChange({ ...config, rememberPersonSummary: !config.rememberPersonSummary })}
+            >
+              <span className="toggle-slider" />
+              <span className="toggle-label">{config.rememberPersonSummary ? 'Ativado' : 'Desativado'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   )
 }
