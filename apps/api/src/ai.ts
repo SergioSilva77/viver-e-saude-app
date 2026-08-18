@@ -80,15 +80,28 @@ ${formatHealthProfile(options.healthProfile)}
   const memoryInstructions = options?.rememberPersonSummary
     ? `
 ## Instruções especiais de memória
-- Você está CONSTRUINDO um conhecimento sobre esta pessoa ao longo do tempo
-- NÃO faça um interrogatório. Converse NATURALMENTE
-- Se faltar informação relevante, mencione CASUALMENTE: "Se quiser me contar mais sobre [X], posso te orientar melhor"
-- Quando a pessoa passar uma informação nova de saúde (peso, idade, condição), confirme sutilmente e atualize silenciosamente
-- Para atualizar o perfil de saúde, responda EXATAMENTE: [UPDATE_HEALTH_PROFILE: {"campo": "valor"}]
-- Após algumas conversas, quando tiver informações suficientes, pergunte: "Quer que eu faça um resumo sobre você para te conhecer melhor?"
-- Se ela confirmar, responda: [UPDATE_PERSON_SUMMARY: "resumo compacto aqui - máximo 400 caracteres"]
-- NÃO repita o resumo a cada resposta. Use-o como CONTEXTO INTERNO
-- Quando fizer sentido comparar com histórico, faça naturalmente: "Você já conseguiu emagrecer X kg antes, dá pra fazer de novo"
+Você está CONSTRUINDO um conhecimento sobre esta pessoa ao longo do tempo.
+NÃO faça um interrogatório. Converse NATURALMENTE.
+Se faltar informação relevante, mencione CASUALMENTE: "Se quiser me contar mais sobre [X], posso te orientar melhor"
+
+### ATUALIZAÇÃO DO PERFIL DE SAÚDE — OBRIGATÓRIO
+Quando a pessoa mencionar QUALQUER informação de saúde — peso, idade, altura, sexo, tipo sanguíneo, condição de saúde, medicamento, objetivo — você DEVE incluir o marcador abaixo no FINAL da sua resposta, DEPOIS de todo o texto:
+
+[UPDATE_HEALTH_PROFILE: {"campo": "valor"}]
+
+Exemplos:
+- Pessoa diz "ganhei 80kg" → responda normalmente + no final: [UPDATE_HEALTH_PROFILE: {"weightKg": 80}]
+- Pessoa diz "tenho 30 anos" → responda normalmente + no final: [UPDATE_HEALTH_PROFILE: {"age": 30}]
+- Pessoa diz "meu tipo sanguíneo é O+" → responda normalmente + no final: [UPDATE_HEALTH_PROFILE: {"bloodType": "O+"}]
+- Pessoa diz "comecei a tomar remédio para pressão" → responda normalmente + no final: [UPDATE_HEALTH_PROFILE: {"medications": ["pressão arterial"]}]
+
+O marcador é INVISÍVEL para o usuário (removido automaticamente). Sempre use. É obrigatório.
+
+### RESUMO DA PESSOA
+Após acumular informações suficientes, pergunte: "Quer que eu faça um resumo sobre você?"
+Se confirmar, responda: [UPDATE_PERSON_SUMMARY: "resumo compacto - máximo 400 caracteres"]
+NÃO repita o resumo a cada resposta. Use-o como CONTEXTO INTERNO.
+Quando fizer sentido comparar com histórico, faça naturalmente: "Você já conseguiu emagrecer X kg antes, dá pra fazer de novo"
 `
     : ''
 
