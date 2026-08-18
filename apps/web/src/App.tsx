@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react'
+import { TutorialOverlay, type TutorialStep } from './TutorialOverlay'
 /** Lightweight markdown → HTML (headings, bold, italic, lists, paragraphs) */
 function mdToHtml(md: string): string {
   const lines = md.split('\n')
@@ -369,6 +370,34 @@ function App() {
   // Pre-flight: is Stripe configured on the backend? null = checking
   const [stripeReady, setStripeReady] = useState<boolean | null>(null)
 
+  // Tutorial
+  const [showTutorial, setShowTutorial] = useState(false)
+
+  const tutorialSteps: TutorialStep[] = [
+    { target: '[data-tour="topbar"]', title: 'Bem-vindo ao Viver & Saúde!', text: 'Este é seu app de saúde e bem-estar. Vamos te mostrar como aproveitar ao máximo.', position: 'bottom' },
+    { target: '[data-tour="nav-meuguardiao"]', title: 'MeuGuardião', text: 'Seu assistente de saúde com inteligência artificial. Tire dúvidas, receba dicas e acompanhe sua jornada.', position: 'top', section: 'meuguardiao' },
+    { target: '[data-tour="guardiao-chips"]', title: 'Sugestões rápidas', text: 'Toque em uma sugestão para começar uma conversa rapidamente com o MeuGuardião.', position: 'bottom' },
+    { target: '[data-tour="guardiao-input"]', title: 'Converse com o MeuGuardião', text: 'Digite aqui qualquer dúvida sobre saúde, alimentação ou bem-estar.', position: 'top' },
+    { target: '[data-tour="nav-receitas"]', title: 'Receitas Naturais', text: 'Protocolos e receitas naturais para cuidar da sua saúde de forma integrada.', position: 'top', section: 'receitas' },
+    { target: '[data-tour="nav-comunidade"]', title: 'Comunidade', text: 'Grupos exclusivos no WhatsApp e Telegram para trocar experiências.', position: 'top', section: 'comunidade' },
+    { target: '[data-tour="nav-conta"]', title: 'Sua Conta', text: 'Gerencie seu perfil, dados de saúde e configurações aqui.', position: 'top', section: 'conta' },
+    { target: '[data-tour="conta-avatar"]', title: 'Foto de Perfil', text: 'Toque na bolinha para adicionar ou trocar sua foto de perfil.', position: 'bottom' },
+    { target: '[data-tour="conta-health"]', title: 'Dados de Saúde', text: 'Preencha seu perfil de saúde para o MeuGuardião te conhecer melhor e dar respostas personalizadas.', position: 'bottom' },
+  ]
+
+  const startTutorial = useCallback(() => setShowTutorial(true), [])
+  const finishTutorial = useCallback(() => {
+    setShowTutorial(false)
+    localStorage.setItem('vs_tutorial_done', '1')
+    // Return to home
+    setActiveSection('inicio')
+  }, [])
+  const skipTutorial = useCallback(() => {
+    setShowTutorial(false)
+    localStorage.setItem('vs_tutorial_done', '1')
+    setActiveSection('inicio')
+  }, [])
+
   // Community links fetched from API
   const [communityLinks, setCommunityLinks] = useState<CommunityLink[]>([])
 
@@ -449,6 +478,14 @@ function App() {
   useEffect(() => {
     setHealthProfile(loadHealthProfile(sessionUserId))
   }, [sessionUserId])
+
+  // Auto-show tutorial on first login
+  useEffect(() => {
+    if (authState === 'authenticated' && !localStorage.getItem('vs_tutorial_done')) {
+      const timer = setTimeout(() => setShowTutorial(true), 800)
+      return () => clearTimeout(timer)
+    }
+  }, [authState])
 
   // Periodic session expiration check — forces logout if session expired while app is open
   useEffect(() => {
@@ -694,7 +731,7 @@ function App() {
   return (
     <div className="app-shell">
       {/* ── Topo ──────────────────────────────────────────── */}
-      <header className="topbar">
+      <header className="topbar" data-tour="topbar">
         <div className="topbar-brand">
           <div className="topbar-logo"><i className="bi bi-heart-pulse-fill"></i></div>
           <span className="topbar-name">Viver &amp; Saúde</span>
@@ -1043,7 +1080,7 @@ function App() {
           ) : (
             <>
               <div>
-                <label className="profile-avatar" style={{ cursor: 'pointer', position: 'relative' }}>
+                <label className="profile-avatar" data-tour="conta-avatar" style={{ cursor: 'pointer', position: 'relative' }}>
                   {sessionUserPhotoUrl ? (
                     <img src={sessionUserPhotoUrl} alt={sessionUserName} className="profile-avatar-img" />
                   ) : (
@@ -1085,6 +1122,12 @@ function App() {
                 )}
                 <div className="profile-plan">{planLabel}</div>
               </div>
+
+              <button type="button" className="tutorial-trigger-btn" onClick={startTutorial}>
+                <i className="bi bi-info-circle" />
+                Assistente de uso
+              </button>
+
               <ul className="menu-list">
                 {[
                   { icon: 'bi-person', label: 'Dados pessoais', action: () => setShowHealthEditor(true) },
@@ -1119,7 +1162,7 @@ function App() {
 
               {/* Resumo de saúde — mostra dados reais */}
               <div>
-                <div className="health-summary-header">
+                <div className="health-summary-header" data-tour="conta-health">
                   <h3 className="section-title" style={{ fontSize: '1rem', marginBottom: 0 }}>
                     Dados de saúde
                   </h3>
@@ -1270,6 +1313,7 @@ function App() {
               key={item.id}
               aria-label={item.label}
               title={item.label}
+              data-tour={`nav-${item.id}`}
               className={`nav-btn ${activeSection === item.id ? 'active' : ''} ${itemLocked ? 'nav-btn-locked' : ''}`}
               onClick={() => setActiveSection(item.id)}
             >
@@ -1279,6 +1323,15 @@ function App() {
           )
         })}
       </nav>
+
+      {/* ── Tutorial ──────────────────────────────────────── */}
+      {showTutorial && (
+        <TutorialOverlay
+          steps={tutorialSteps}
+          onFinish={finishTutorial}
+          onSkip={skipTutorial}
+        />
+      )}
     </div>
   )
 }

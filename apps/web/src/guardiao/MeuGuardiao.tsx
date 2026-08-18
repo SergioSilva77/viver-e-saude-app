@@ -390,7 +390,7 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
             Seu assistente de saúde e bem-estar. Pergunte sobre alimentação, hábitos saudáveis,
             receitas naturais ou orientações personalizadas.
           </p>
-          <div className="guardiao-intro-suggestions">
+          <div className="guardiao-intro-suggestions" data-tour="guardiao-chips">
             {[
               'Como melhorar meu sono?',
               'Alimentos anti-inflamatórios',
@@ -448,7 +448,7 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
       </div>
 
       {/* Input area */}
-      <div className="chat-input-area">
+      <div className="chat-input-area" data-tour="guardiao-input">
         <input
           ref={inputRef}
           type="text"
