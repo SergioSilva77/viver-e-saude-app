@@ -1061,7 +1061,7 @@ function App() {
                         const res = await fetch(`/api/user/${sessionUserId}/avatar`, { method: 'POST', body: formData })
                         if (res.ok) {
                           const data = await res.json()
-                          const newUrl = data.photoUrl as string
+                          const newUrl = `${data.photoUrl as string}?v=${Date.now()}`
                           setSessionUserPhotoUrl(newUrl)
                           // Update session in localStorage
                           const session = loadSession()
