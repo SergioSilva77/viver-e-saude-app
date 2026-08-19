@@ -345,6 +345,28 @@ function App() {
   const [cancelLoading, setCancelLoading] = useState(false)
   const [cancelResult, setCancelResult] = useState<Record<string, string>>({}) // planId → ISO cancelAt date
 
+  // Change password
+  const [sendingReset, setSendingReset] = useState(false)
+
+  async function handleChangePassword() {
+    if (!sessionUserEmail || sendingReset) return
+    const confirmed = confirm(`Enviar link de redefinição de senha para ${sessionUserEmail}?`)
+    if (!confirmed) return
+    setSendingReset(true)
+    try {
+      await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: sessionUserEmail }),
+      })
+      alert('Enviamos um link para redefinir sua senha. Verifique seu email (incluindo spam).')
+    } catch {
+      alert('Erro ao enviar. Tente novamente.')
+    } finally {
+      setSendingReset(false)
+    }
+  }
+
   // Checkout
   const [checkoutLoading, setCheckoutLoading] = useState<PlanId | null>(null)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
@@ -1148,6 +1170,7 @@ function App() {
                       setCancelModal({ planId: monthlyPlan as PlanId, planLabel: label })
                     }
                   })() },
+                  { icon: 'bi-key', label: sendingReset ? 'Enviando...' : 'Alterar senha', action: handleChangePassword },
                   { icon: 'bi-box-arrow-right', label: 'Sair', action: handleLogout },
                 ].map((item) => (
                   <li key={item.label}>
