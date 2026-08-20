@@ -72,6 +72,8 @@ import { useRealtimeStatus } from './realtime/useRealtimeStatus'
 import { ConsultorSection } from './consultor/ConsultorSection'
 import { CallOverlay } from './consultor/CallOverlay'
 import { callManager } from './consultor/callManager'
+import { NotificationBell } from './notifications/NotificationBell'
+import { notificationCenter } from './notifications/notificationCenter'
 import './App.css'
 
 const planIcons = ['bi-seedling', 'bi-heart-pulse', 'bi-stars']
@@ -504,6 +506,8 @@ function App() {
       if (session.token) {
         realtimeService.connect(session.token)
         callManager.setToken(session.token)
+        notificationCenter.setToken(session.token)
+        notificationCenter.load()
       }
     } else {
       setAuthState('unauthenticated')
@@ -692,7 +696,11 @@ function App() {
             setSessionUserPhotoUrl(session.photoUrl ?? '')
             setSessionUserToken(session.token ?? '')
             setSessionUserRole(session.role ?? 'user')
-            if (session.token) callManager.setToken(session.token)
+            if (session.token) {
+              callManager.setToken(session.token)
+              notificationCenter.setToken(session.token)
+              notificationCenter.load()
+            }
           }
           setGuardiao24hUntil(session?.guardiao24hUnlockedUntil ?? null)
           setConsultantUsed(session?.consultantUsed ?? false)
@@ -762,6 +770,7 @@ function App() {
     setSessionUserToken('')
     setSessionUserRole('user')
     callManager.setToken('')
+    notificationCenter.reset()
     setActivePlans([])
     setAuthState('unauthenticated')
   }
@@ -779,9 +788,7 @@ function App() {
           <div className="topbar-logo"><i className="bi bi-heart-pulse-fill"></i></div>
           <span className="topbar-name">Viver &amp; Saúde</span>
         </div>
-        <button type="button" className="topbar-bell" aria-label="Notificações">
-          <i className="bi bi-bell"></i>
-        </button>
+        <NotificationBell />
       </header>
 
       {/* ── Conteúdo ──────────────────────────────────────── */}
