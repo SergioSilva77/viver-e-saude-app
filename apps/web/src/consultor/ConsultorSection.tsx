@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { realtimeService } from '../realtime/realtimeService'
+import { callManager } from './callManager'
 import { fetchConsultants, fetchConversations, fetchMessages, createConversation, markConversationRead } from './api'
 import type { Consultant, ConversationMessage, ConversationSummary, MessageDeliveryStatus } from './types'
 
@@ -303,6 +304,24 @@ function ChatThread({
             </span>
           )}
         </span>
+        <button
+          type="button"
+          className="chat-toolbar-btn"
+          onClick={() => callManager.startCall(conversation.peerId, conversation.peerName, conversation.peerPhotoUrl, 'voice')}
+          aria-label="Chamada de voz"
+          title="Chamada de voz"
+        >
+          <i className="bi bi-telephone" />
+        </button>
+        <button
+          type="button"
+          className="chat-toolbar-btn"
+          onClick={() => callManager.startCall(conversation.peerId, conversation.peerName, conversation.peerPhotoUrl, 'video')}
+          aria-label="Videochamada"
+          title="Videochamada"
+        >
+          <i className="bi bi-camera-video" />
+        </button>
       </div>
 
       <div className="guardiao-messages">
