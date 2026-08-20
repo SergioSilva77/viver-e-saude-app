@@ -173,6 +173,11 @@ export default defineConfig({
         target: 'http://localhost:4000',
         changeOrigin: true,
       },
+      // WebSocket de sinalização (chat/chamadas) — precisa de ws:true para o upgrade funcionar.
+      '/ws': {
+        target: 'ws://localhost:4000',
+        ws: true,
+      },
     },
   },
 })

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { plans } from '@viver-saude/shared'
 import { saveSession } from './sessionTypes'
 import { devAuthenticate } from './devAuth'
+import { realtimeService } from '../realtime/realtimeService'
 import type { PlanId } from '@viver-saude/shared'
 
 type SubscribeState = 'idle' | 'loading' | 'error'
@@ -144,7 +145,10 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
       planIds: resolvedPlanIds,
       planExpiresAt: result.planExpiresAt,
       guardiao24hUnlockedUntil: buildGuardiao24hTimestamp(resolvedPlanIds),
+      token: result.token,
+      role: result.role,
     })
+    if (result.token) realtimeService.connect(result.token)
     onLogin(resolvedPlanIds)
   }
 

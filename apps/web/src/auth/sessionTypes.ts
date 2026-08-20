@@ -28,6 +28,10 @@ export interface Session {
    * Available exclusively to Nível 1 users.
    */
   consultantUsed?: boolean
+  /** Token JWT usado nas rotas novas (chat/chamada/agendamento) e no WebSocket. */
+  token?: string
+  /** 'user' ou 'consultant'. */
+  role?: 'user' | 'consultant'
 }
 
 // ── Constants ──────────────────────────────────────────────

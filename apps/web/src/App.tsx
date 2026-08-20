@@ -67,6 +67,8 @@ import { HealthProfileEditor } from './health/HealthProfileEditor'
 import { loadHealthProfile, saveHealthProfile, clearHealthProfile, type HealthProfile } from './health/healthProfile'
 import { loadSession, saveSession, clearSession, updateSession } from './auth/sessionTypes'
 import { clearChats } from './guardiao/chatHistory'
+import { realtimeService } from './realtime/realtimeService'
+import { useRealtimeStatus } from './realtime/useRealtimeStatus'
 import './App.css'
 
 const planIcons = ['bi-seedling', 'bi-heart-pulse', 'bi-stars']
@@ -322,6 +324,7 @@ type AuthState = 'checking' | 'unauthenticated' | 'authenticated'
 
 function App() {
   const [authState, setAuthState] = useState<AuthState>('checking')
+  const realtimeStatus = useRealtimeStatus()
   const [activePlans, setActivePlans] = useState<PlanId[]>([])
   const [activeSection, setActiveSection] = useState<AppSection>('inicio')
   const [sessionUserId, setSessionUserId] = useState<string | undefined>(undefined)
@@ -491,6 +494,7 @@ function App() {
       setSessionUserName(session.fullName ?? '')
       setSessionUserPhotoUrl(session.photoUrl ?? '')
       setAuthState('authenticated')
+      if (session.token) realtimeService.connect(session.token)
     } else {
       setAuthState('unauthenticated')
     }
@@ -733,6 +737,7 @@ function App() {
 
   async function handleLogout() {
     // Clear user-scoped local data before clearing the session
+    realtimeService.disconnect()
     clearChats(sessionUserId)
     clearHealthProfile(sessionUserId)
     clearSession()
@@ -1143,6 +1148,36 @@ function App() {
                   <div className="profile-email">{sessionUserEmail}</div>
                 )}
                 <div className="profile-plan">{planLabel}</div>
+              </div>
+
+              {/* Indicador de conexão em tempo real (Módulo 1: signaling/WS).
+                  Visível só para debug/validação — será substituído por UI real
+                  de chat/chamadas nos próximos módulos. */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '-0.5rem' }}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 12px',
+                    borderRadius: 20,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color:
+                      realtimeStatus === 'connected' ? '#2e7d5e'
+                        : realtimeStatus === 'connecting' ? '#b8860b'
+                        : '#8a9a92',
+                    background:
+                      realtimeStatus === 'connected' ? 'rgba(46,125,94,0.12)'
+                        : realtimeStatus === 'connecting' ? 'rgba(184,134,11,0.12)'
+                        : 'rgba(138,154,146,0.12)',
+                  }}
+                >
+                  <i className="bi bi-circle-fill" style={{ fontSize: 8 }} />
+                  {realtimeStatus === 'connected' && 'Tempo real: conectado'}
+                  {realtimeStatus === 'connecting' && 'Tempo real: conectando...'}
+                  {realtimeStatus === 'disconnected' && 'Tempo real: desconectado'}
+                </span>
               </div>
 
               <button type="button" className="tutorial-trigger-btn" onClick={startTutorial}>

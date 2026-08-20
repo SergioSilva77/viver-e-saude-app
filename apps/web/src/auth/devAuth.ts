@@ -18,6 +18,10 @@ export interface DevAuthResult {
   planIds?: PlanId[]
   /** Per-plan expiry timestamps in ms (ISO strings converted from API). */
   planExpiresAt?: Record<string, number>
+  /** Token JWT usado nas rotas novas (chat/chamada/agendamento) e no WebSocket. */
+  token?: string
+  /** 'user' ou 'consultant'. */
+  role?: 'user' | 'consultant'
   error?: string
 }
 
@@ -38,6 +42,8 @@ export async function devAuthenticate(email: string, password: string): Promise<
       photoUrl?: string
       planIds?: string[]
       planExpiresAt?: Record<string, string>
+      token?: string
+      role?: 'user' | 'consultant'
     }
 
     if (!res.ok || !data.ok) {
@@ -58,6 +64,8 @@ export async function devAuthenticate(email: string, password: string): Promise<
       photoUrl: data.photoUrl,
       planIds: (data.planIds ?? []) as PlanId[],
       planExpiresAt,
+      token: data.token,
+      role: data.role,
     }
   } catch {
     return {
