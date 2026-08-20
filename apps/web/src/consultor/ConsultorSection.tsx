@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { realtimeService } from '../realtime/realtimeService'
 import { callManager } from './callManager'
 import { fetchConsultants, fetchConversations, fetchMessages, createConversation, markConversationRead } from './api'
+import { AppointmentsPanel } from '../appointments/AppointmentsPanel'
 import type { Consultant, ConversationMessage, ConversationSummary, MessageDeliveryStatus } from './types'
 
 interface Props {
@@ -26,6 +27,7 @@ export function ConsultorSection({ token, selfId, role }: Props) {
   const [selected, setSelected] = useState<ConversationSummary | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [consultants, setConsultants] = useState<Consultant[]>([])
+  const [appointmentsOpen, setAppointmentsOpen] = useState(false)
 
   async function loadConversations() {
     try {
@@ -95,6 +97,9 @@ export function ConsultorSection({ token, selfId, role }: Props) {
     <div className="chat-list-view">
       <div className="chat-list-header">
         <span className="chat-list-title">Consultor</span>
+        <button type="button" className="chat-toolbar-btn" onClick={() => setAppointmentsOpen(true)} title={role === 'consultant' ? 'Minha agenda' : 'Minhas consultas'}>
+          <i className="bi bi-calendar3" />
+        </button>
         {role === 'user' && (
           <button type="button" className="chat-toolbar-btn" onClick={openPicker} title="Nova conversa">
             <i className="bi bi-plus-circle" />
@@ -185,6 +190,10 @@ export function ConsultorSection({ token, selfId, role }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {appointmentsOpen && (
+        <AppointmentsPanel token={token} role={role} onClose={() => setAppointmentsOpen(false)} />
       )}
     </div>
   )
