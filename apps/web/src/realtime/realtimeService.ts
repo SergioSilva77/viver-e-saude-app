@@ -24,6 +24,7 @@ class RealtimeServiceImpl {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private statusListeners = new Set<StatusListener>()
   private messageListeners = new Set<MessageListener>()
+  private pendingQueue: RealtimeMessage[] = []
 
   getStatus(): RealtimeStatus {
     return this.status
@@ -60,6 +61,7 @@ class RealtimeServiceImpl {
 
       socket.onmessage = (event) => {
         this.setStatus('connected')
+        this.flushQueue()
         try {
           const decoded = JSON.parse(event.data as string)
           if (decoded && typeof decoded === 'object') {
@@ -90,9 +92,20 @@ class RealtimeServiceImpl {
     }, 4000)
   }
 
-  /** Envia uma mensagem já estruturada (ex.: {type: 'ping'}). */
+  /** Envia uma mensagem já estruturada (ex.: {type: 'ping'}). Fica em fila se offline. */
   send(message: RealtimeMessage): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(message))
+    } else {
+      this.pendingQueue.push(message)
+    }
+  }
+
+  private flushQueue(): void {
+    if (this.pendingQueue.length === 0 || this.socket?.readyState !== WebSocket.OPEN) return
+    const pending = [...this.pendingQueue]
+    this.pendingQueue = []
+    for (const message of pending) {
       this.socket.send(JSON.stringify(message))
     }
   }
@@ -103,6 +116,7 @@ class RealtimeServiceImpl {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.socket?.close()
     this.socket = null
+    this.pendingQueue = []
     this.setStatus('disconnected')
   }
 

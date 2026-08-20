@@ -1499,6 +1499,25 @@ app.get('/api/admin/consultants', requireAdminToken, async (_req, res) => {
   }
 })
 
+// ── Consultores disponíveis (para o usuário escolher com quem conversar) ──
+app.get('/api/consultants', requireAuth, async (_req, res) => {
+  try {
+    const consultants = await listConsultants()
+    res.json({
+      consultants: consultants.map((c) => ({
+        id: c.userId,
+        fullName: c.fullName,
+        photoUrl: c.photoUrl,
+        specialty: c.profile.specialty,
+        bio: c.profile.bio,
+        status: c.profile.status,
+      })),
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar consultores.' })
+  }
+})
+
 // ── Reset password web page ────────────────────────────────
 // Formulário com POST nativo (sem JavaScript) — funciona em qualquer
 // navegador/WebView, inclusive os que bloqueiam ou quebram scripts.

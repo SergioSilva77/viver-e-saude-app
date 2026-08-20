@@ -1,6 +1,6 @@
 export type PlanId = 'nivel1' | 'nivel2' | 'nivel3'
 export type BillingInterval = 'one_time' | 'monthly'
-export type AppSection = 'inicio' | 'meuguardiao' | 'receitas' | 'comunidade' | 'conta'
+export type AppSection = 'inicio' | 'meuguardiao' | 'receitas' | 'comunidade' | 'consultor' | 'conta'
 
 export interface PlanDefinition {
   id: PlanId
@@ -122,6 +122,7 @@ export const bottomNavItems: NavItem[] = [
   { id: 'meuguardiao', label: 'MeuGuardião', icon: 'bi-chat-heart' },
   { id: 'receitas', label: 'Receitas', icon: 'bi-journal-medical' },
   { id: 'comunidade', label: 'Comunidade', icon: 'bi-people' },
+  { id: 'consultor', label: 'Consultor', icon: 'bi-headset' },
   { id: 'conta', label: 'Conta', icon: 'bi-person-circle' },
 ]
 
@@ -248,6 +249,9 @@ export function getSectionAccess(planId: PlanId | null, section: AppSection): Se
     case 'conta':
       return 'free'
 
+    case 'consultor':
+      return 'free'
+
     default:
       return 'locked'
   }
@@ -258,6 +262,7 @@ export const sectionRequiredPlan: Record<AppSection, string> = {
   meuguardiao: 'Nível 1',
   receitas: 'Nível 2',
   comunidade: 'Nível 3',
+  consultor: 'Nível 1',
   conta: 'Nível 1',
 }
 

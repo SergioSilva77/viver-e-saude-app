@@ -2967,3 +2967,70 @@
 .tutorial-trigger-btn i {
   font-size: 1.15rem;
 }
+
+/* ── Consultor (Módulo 2: chat usuário ↔ consultor) ──────── */
+.consultor-avatar-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  margin-right: 0.75rem;
+}
+
+.consultor-avatar-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.consultor-avatar-fallback {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #5a8672;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.consultor-status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #8fad9c;
+}
+
+.consultor-status-dot.online {
+  background: #2e7d5e;
+}
+
+.consultor-list-trailing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
+}
+
+.consultor-unread-badge {
+  background: #5a8672;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  min-width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}

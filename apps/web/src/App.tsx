@@ -69,6 +69,7 @@ import { loadSession, saveSession, clearSession, updateSession } from './auth/se
 import { clearChats } from './guardiao/chatHistory'
 import { realtimeService } from './realtime/realtimeService'
 import { useRealtimeStatus } from './realtime/useRealtimeStatus'
+import { ConsultorSection } from './consultor/ConsultorSection'
 import './App.css'
 
 const planIcons = ['bi-seedling', 'bi-heart-pulse', 'bi-stars']
@@ -331,6 +332,8 @@ function App() {
   const [sessionUserEmail, setSessionUserEmail] = useState<string | undefined>(undefined)
   const [sessionUserName, setSessionUserName] = useState<string>('')
   const [sessionUserPhotoUrl, setSessionUserPhotoUrl] = useState<string>('')
+  const [sessionUserToken, setSessionUserToken] = useState<string>('')
+  const [sessionUserRole, setSessionUserRole] = useState<'user' | 'consultant'>('user')
 
   // 24h MeuGuardião unlock state
   const [guardiao24hUntil, setGuardiao24hUntil] = useState<number | null>(null)
@@ -493,6 +496,8 @@ function App() {
       setSessionUserEmail(session.email)
       setSessionUserName(session.fullName ?? '')
       setSessionUserPhotoUrl(session.photoUrl ?? '')
+      setSessionUserToken(session.token ?? '')
+      setSessionUserRole(session.role ?? 'user')
       setAuthState('authenticated')
       if (session.token) realtimeService.connect(session.token)
     } else {
@@ -680,6 +685,8 @@ function App() {
             setSessionUserEmail(session.email)
             setSessionUserName(session.fullName ?? '')
             setSessionUserPhotoUrl(session.photoUrl ?? '')
+            setSessionUserToken(session.token ?? '')
+            setSessionUserRole(session.role ?? 'user')
           }
           setGuardiao24hUntil(session?.guardiao24hUnlockedUntil ?? null)
           setConsultantUsed(session?.consultantUsed ?? false)
@@ -746,6 +753,8 @@ function App() {
     setSessionUserEmail(undefined)
     setSessionUserName('')
     setSessionUserPhotoUrl('')
+    setSessionUserToken('')
+    setSessionUserRole('user')
     setActivePlans([])
     setAuthState('unauthenticated')
   }
@@ -1096,6 +1105,24 @@ function App() {
               </>
             )
           })()
+        )}
+
+        {/* CONSULTOR */}
+        {activeSection === 'consultor' && (
+          isLocked ? (
+            <LockedSection section="consultor" onViewPlans={goToPlans}>
+              <div className="chat-list-empty">
+                <i className="bi bi-headset" />
+                <p>Converse com nossos consultores especializados.</p>
+              </div>
+            </LockedSection>
+          ) : sessionUserId && sessionUserToken ? (
+            <ConsultorSection token={sessionUserToken} selfId={sessionUserId} role={sessionUserRole} />
+          ) : (
+            <div className="chat-list-empty">
+              <p>Faça login novamente para acessar o chat com consultores.</p>
+            </div>
+          )
         )}
 
         {/* CONTA */}
