@@ -136,7 +136,13 @@ export function AppointmentsPanel({ token, role, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+        style={{
+          maxHeight: '78vh',
+          display: 'flex',
+          flexDirection: 'column',
+          bottom: 'calc(76px + env(safe-area-inset-bottom))',
+          borderRadius: 24,
+        }}
       >
         <div className="plans-overlay-handle" onClick={onClose} />
         <div className="plans-overlay-header">

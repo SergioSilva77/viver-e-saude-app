@@ -154,6 +154,7 @@ export function ConsultorSection({ token, selfId, role }: Props) {
             role="dialog"
             aria-modal="true"
             aria-label="Escolha um consultor"
+            style={{ bottom: 'calc(76px + env(safe-area-inset-bottom))', maxHeight: '78vh', borderRadius: 24 }}
           >
             <div className="plans-overlay-handle" onClick={() => setPickerOpen(false)} />
             <div className="plans-overlay-header">
