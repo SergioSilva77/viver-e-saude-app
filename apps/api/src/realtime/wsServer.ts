@@ -20,6 +20,8 @@ import {
   endCall,
   isCallParticipant,
   getOtherParty,
+  getCallLimitInfo,
+  CALL_LIMIT_WARNING_SECONDS,
   type Call,
   type CallType,
 } from '../callStore.js'
@@ -49,7 +51,7 @@ const offlineTimers = new Map<string, NodeJS.Timeout>()
 const OFFLINE_DEBOUNCE_MS = 5000
 
 // callId -> chamada + timer de "não atendeu" (só existe enquanto 'ringing')
-const activeCalls = new Map<string, { call: Call; ringTimer?: NodeJS.Timeout }>()
+const activeCalls = new Map<string, { call: Call; ringTimer?: NodeJS.Timeout; limitWarnTimer?: NodeJS.Timeout; limitEndTimer?: NodeJS.Timeout }>()
 const RING_TIMEOUT_MS = 30_000
 // userId -> callId da chamada em andamento (ringing ou ongoing) — usado para
 // impedir uma segunda chamada simultânea e para encerrar chamadas ao desconectar.
@@ -90,7 +92,8 @@ type ServerMessage =
   | { type: 'call:cancelled'; callId: string }
   | { type: 'call:missed'; callId: string }
   | { type: 'call:busy'; callId?: string }
-  | { type: 'call:ended'; callId: string; durationSeconds: number }
+  | { type: 'call:ended'; callId: string; durationSeconds: number; reason?: 'limit_reached' }
+  | { type: 'call:limit_warning'; callId: string; remainingSeconds: number }
   | { type: 'webrtc:offer'; callId: string; sdp: unknown }
   | { type: 'webrtc:answer'; callId: string; sdp: unknown }
   | { type: 'webrtc:ice'; callId: string; candidate: unknown }
@@ -210,6 +213,8 @@ async function handleConsultantOnline(userId: string): Promise<void> {
 async function finalizeCall(callId: string, status: 'ended' | 'rejected' | 'cancelled' | 'missed'): Promise<Call | null> {
   const active = activeCalls.get(callId)
   if (active?.ringTimer) clearTimeout(active.ringTimer)
+  if (active?.limitWarnTimer) clearTimeout(active.limitWarnTimer)
+  if (active?.limitEndTimer) clearTimeout(active.limitEndTimer)
   activeCalls.delete(callId)
 
   const updated = await endCall(callId, status)
@@ -231,6 +236,31 @@ async function finalizeCall(callId: string, status: 'ended' | 'rejected' | 'canc
   }
 
   return updated
+}
+
+/**
+ * Agenda o aviso de "faltam 5 minutos" e o encerramento automático da
+ * chamada quando o usuário Nível 1 atinge o limite mensal (30 min).
+ */
+function scheduleCallLimitTimers(callId: string, remainingSeconds: number): void {
+  const active = activeCalls.get(callId)
+  if (!active) return
+
+  const warnDelayMs = Math.max(0, remainingSeconds - CALL_LIMIT_WARNING_SECONDS) * 1000
+  active.limitWarnTimer = setTimeout(() => {
+    const current = activeCalls.get(callId)
+    if (!current) return
+    sendToUser(current.call.callerId, { type: 'call:limit_warning', callId, remainingSeconds: CALL_LIMIT_WARNING_SECONDS })
+    sendToUser(current.call.calleeId, { type: 'call:limit_warning', callId, remainingSeconds: CALL_LIMIT_WARNING_SECONDS })
+  }, warnDelayMs)
+
+  active.limitEndTimer = setTimeout(async () => {
+    const finalized = await finalizeCall(callId, 'ended')
+    if (finalized) {
+      sendToUser(finalized.callerId, { type: 'call:ended', callId, durationSeconds: finalized.durationSeconds ?? 0, reason: 'limit_reached' })
+      sendToUser(finalized.calleeId, { type: 'call:ended', callId, durationSeconds: finalized.durationSeconds ?? 0, reason: 'limit_reached' })
+    }
+  }, remainingSeconds * 1000)
 }
 
 function scheduleConsultantOffline(userId: string): void {
@@ -408,6 +438,18 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
                 break
               }
 
+              // Limite mensal do Nível 1 (30 min/mês) — verifica quem dos dois é o usuário
+              // (o outro é sempre o consultor, que não tem limite de plano).
+              const levelUser = user.role === 'user' ? user : callee
+              const limitInfo = await getCallLimitInfo(levelUser.id, levelUser.planIds as import('@viver-saude/shared').PlanId[])
+              if (limitInfo.limited && limitInfo.remainingSeconds <= 0) {
+                send(ws, {
+                  type: 'error',
+                  message: 'Limite mensal de chamadas do Nível 1 atingido (30 min/mês). Assine o Nível 2 para chamadas ilimitadas.',
+                })
+                break
+              }
+
               const call = await createCall(user.id, calleeId, callType)
               userActiveCall.set(user.id, call.id)
               userActiveCall.set(calleeId, call.id)
@@ -462,6 +504,16 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
               }
               sendToUser(call.callerId, { type: 'call:accepted', callId })
               send(ws, { type: 'call:accepted', callId })
+
+              // Limite mensal do Nível 1 — agenda aviso (5 min antes) e encerramento
+              // automático quando o tempo acabar. Não se aplica a Nível 2/3.
+              const levelUser = user.role === 'user' ? user : await findById(call.callerId)
+              if (levelUser) {
+                const limitInfo = await getCallLimitInfo(levelUser.id, levelUser.planIds as import('@viver-saude/shared').PlanId[])
+                if (limitInfo.limited && Number.isFinite(limitInfo.remainingSeconds)) {
+                  scheduleCallLimitTimers(callId, limitInfo.remainingSeconds)
+                }
+              }
             } catch (err) {
               console.error('[WS] Erro ao processar call:accept:', err)
               send(ws, { type: 'error', message: 'Falha ao aceitar chamada.' })

@@ -38,6 +38,7 @@ import {
 import { createServer } from 'node:http'
 import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser } from './realtime/wsServer.js'
 import { generateTurnCredentials } from './turnCredentials.js'
+import { getCallLimitInfo } from './callStore.js'
 import {
   listNotifications,
   countUnreadNotifications,
@@ -1482,6 +1483,25 @@ app.get('/api/turn-credentials', requireAuth, (req, res) => {
   const credentials = generateTurnCredentials(req.auth!.userId, config.turnSecret, config.turnHost)
   res.json(credentials)
 })
+
+// Saldo de minutos de chamada do mês (Módulo 6 — limite do Nível 1).
+app.get('/api/call-limit', requireAuth, async (req, res) => {
+  try {
+    const self = await findById(req.auth!.userId)
+    if (!self) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    const info = await getCallLimitInfo(self.id, self.planIds as import('@viver-saude/shared').PlanId[])
+    res.json({
+      limited: info.limited,
+      remainingSeconds: Number.isFinite(info.remainingSeconds) ? info.remainingSeconds : null,
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao verificar limite de chamada.' })
+  }
+})
+
 
 // ── Notificações (sininho in-app + push) — Módulo 4 ────────
 const registerDeviceTokenSchema = z.object({

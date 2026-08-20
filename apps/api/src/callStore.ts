@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { query } from './db.js'
+import { getEffectivePlanId, type PlanId } from '@viver-saude/shared'
 
 // ── Chamadas de voz/vídeo (usuário ↔ consultor) ────────────
 // Sinalização acontece via WebSocket (ver realtime/wsServer.ts); esta
 // tabela existe para: (1) auditoria/histórico, (2) permitir ao Módulo 6
 // somar minutos de chamada por usuário/mês (limite do Nível 1).
+
+export const NIVEL1_MONTHLY_LIMIT_SECONDS = 30 * 60
+export const CALL_LIMIT_WARNING_SECONDS = 5 * 60
 
 export type CallType = 'voice' | 'video'
 export type CallStatus = 'ringing' | 'ongoing' | 'ended' | 'missed' | 'rejected' | 'cancelled'
@@ -97,4 +101,28 @@ export async function sumCallSecondsForUser(userId: string, since: Date): Promis
     [userId, since],
   )
   return Number(rows[0]?.total ?? 0)
+}
+
+export interface CallLimitInfo {
+  /** false = nível 2/3, chamadas ilimitadas. */
+  limited: boolean
+  /** Segundos restantes neste mês (só relevante quando limited = true). */
+  remainingSeconds: number
+}
+
+/**
+ * Nível 1 tem 30 min/mês de chamada (acumulado); Nível 2/3 é ilimitado.
+ * Quem não tem nenhum plano é tratado como Nível 1 (mais restritivo) por segurança.
+ */
+export async function getCallLimitInfo(userId: string, planIds: PlanId[]): Promise<CallLimitInfo> {
+  const effectivePlan = getEffectivePlanId(planIds)
+  if (effectivePlan === 'nivel2' || effectivePlan === 'nivel3') {
+    return { limited: false, remainingSeconds: Infinity }
+  }
+
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const usedSeconds = await sumCallSecondsForUser(userId, startOfMonth)
+  const remainingSeconds = Math.max(0, NIVEL1_MONTHLY_LIMIT_SECONDS - usedSeconds)
+  return { limited: true, remainingSeconds }
 }
