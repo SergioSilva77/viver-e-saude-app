@@ -150,3 +150,32 @@ CREATE TABLE IF NOT EXISTS device_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id);
+
+-- ── Agendamento (usuário ↔ consultor) ───────────────────────
+CREATE TABLE IF NOT EXISTS consultant_availability (
+  id VARCHAR PRIMARY KEY,
+  consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  weekday INT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  slot_minutes INT NOT NULL DEFAULT 30,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_consultant_availability_consultant_id ON consultant_availability(consultant_id);
+
+CREATE TABLE IF NOT EXISTS appointments (
+  id VARCHAR PRIMARY KEY,
+  user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  starts_at TIMESTAMP NOT NULL,
+  ends_at TIMESTAMP NOT NULL,
+  status VARCHAR NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'declined', 'cancelled', 'completed')),
+  objective VARCHAR DEFAULT '',
+  reminder_sent_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments(user_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_consultant_id ON appointments(consultant_id);

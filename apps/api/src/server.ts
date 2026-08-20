@@ -24,7 +24,7 @@ import { recordUsage, getUsageStats, setQuota } from './tokenTracker.js'
 import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary, bumpTokenVersion, type UserRole } from './userStore.js'
 import { createResetToken, consumeResetToken } from './resetTokenStore.js'
 import { sendPasswordResetLink } from './emailService.js'
-import { signUserToken, requireAuth } from './auth.js'
+import { signUserToken, requireAuth, requireRole } from './auth.js'
 import { setUserRole, listConsultants, getConsultantProfile, getAllConsultantProfilesMap } from './consultantStore.js'
 import {
   getOrCreateConversation,
@@ -36,7 +36,7 @@ import {
   markRead as markConversationRead,
 } from './conversationStore.js'
 import { createServer } from 'node:http'
-import { attachWebSocketServer, notifyDelivered, notifyRead } from './realtime/wsServer.js'
+import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser } from './realtime/wsServer.js'
 import { generateTurnCredentials } from './turnCredentials.js'
 import {
   listNotifications,
@@ -46,6 +46,20 @@ import {
   registerDeviceToken,
   unregisterDeviceToken,
 } from './notificationStore.js'
+import {
+  setAvailability,
+  getAvailability,
+  listFreeSlots,
+  createAppointment,
+  getAppointmentById,
+  listAppointmentsForUser,
+  listAppointmentsForConsultant,
+  updateAppointmentStatus,
+  isAppointmentParticipant,
+  listAppointmentsNeedingReminder,
+  markReminderSent,
+} from './appointmentStore.js'
+import { sendAppointmentEmail } from './emailService.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -390,6 +404,36 @@ async function runMigrations(): Promise<void> {
       )`,
     },
     { label: 'idx_device_tokens_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id)' },
+    {
+      label: 'consultant_availability table',
+      sql: `CREATE TABLE IF NOT EXISTS consultant_availability (
+        id VARCHAR PRIMARY KEY,
+        consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        weekday INT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        slot_minutes INT NOT NULL DEFAULT 30,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`,
+    },
+    { label: 'idx_consultant_availability_consultant_id', sql: 'CREATE INDEX IF NOT EXISTS idx_consultant_availability_consultant_id ON consultant_availability(consultant_id)' },
+    {
+      label: 'appointments table',
+      sql: `CREATE TABLE IF NOT EXISTS appointments (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        starts_at TIMESTAMP NOT NULL,
+        ends_at TIMESTAMP NOT NULL,
+        status VARCHAR NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'declined', 'cancelled', 'completed')),
+        objective VARCHAR DEFAULT '',
+        reminder_sent_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`,
+    },
+    { label: 'idx_appointments_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments(user_id)' },
+    { label: 'idx_appointments_consultant_id', sql: 'CREATE INDEX IF NOT EXISTS idx_appointments_consultant_id ON appointments(consultant_id)' },
   ]
 
   for (const step of steps) {
@@ -1495,6 +1539,191 @@ app.delete('/api/device-tokens/:token', requireAuth, async (req, res) => {
   }
 })
 
+// ── Agendamento (usuário ↔ consultor) — Módulo 5 ───────────
+const HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/
+
+const availabilitySchema = z.object({
+  rules: z.array(
+    z.object({
+      weekday: z.number().int().min(0).max(6),
+      startTime: z.string().regex(HHMM_REGEX, 'Use o formato HH:MM'),
+      endTime: z.string().regex(HHMM_REGEX, 'Use o formato HH:MM'),
+      slotMinutes: z.number().int().min(10).max(240).default(30),
+    }),
+  ).max(21), // no máx. 3 faixas por dia da semana
+})
+
+const createAppointmentSchema = z.object({
+  consultantId: z.string().min(1),
+  startsAt: z.iso.datetime(),
+  objective: z.string().max(500).default(''),
+})
+
+// Consultor configura a própria disponibilidade (dias da semana + faixa de horário).
+app.put('/api/consultants/me/availability', requireAuth, requireRole('consultant'), async (req, res) => {
+  try {
+    const { rules } = availabilitySchema.parse(req.body)
+    for (const rule of rules) {
+      if (rule.startTime >= rule.endTime) {
+        res.status(400).json({ message: 'O horário inicial deve ser antes do horário final.' })
+        return
+      }
+    }
+    const saved = await setAvailability(req.auth!.userId, rules)
+    res.json({ rules: saved })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao salvar disponibilidade.' })
+  }
+})
+
+app.get('/api/consultants/me/availability', requireAuth, requireRole('consultant'), async (req, res) => {
+  try {
+    const rules = await getAvailability(req.auth!.userId)
+    res.json({ rules })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao buscar disponibilidade.' })
+  }
+})
+
+// Usuário vê os horários livres de um consultor específico, para escolher quando agendar.
+app.get('/api/consultants/:id/free-slots', requireAuth, async (req, res) => {
+  try {
+    const consultant = await findById(String(req.params.id))
+    if (!consultant || consultant.role !== 'consultant') {
+      res.status(404).json({ message: 'Consultor não encontrado.' })
+      return
+    }
+    const daysAhead = req.query.days ? Number(req.query.days) : undefined
+    const slots = await listFreeSlots(consultant.id, daysAhead)
+    res.json({ slots })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao buscar horários livres.' })
+  }
+})
+
+app.post('/api/appointments', requireAuth, async (req, res) => {
+  try {
+    const payload = createAppointmentSchema.parse(req.body)
+    const self = await findById(req.auth!.userId)
+    const consultant = await findById(payload.consultantId)
+    if (!self || !consultant || consultant.role !== 'consultant' || self.role !== 'user') {
+      res.status(400).json({ message: 'Agendamento só pode ser feito por um usuário com um consultor.' })
+      return
+    }
+
+    const startsAt = new Date(payload.startsAt)
+    if (startsAt.getTime() <= Date.now()) {
+      res.status(400).json({ message: 'Escolha um horário no futuro.' })
+      return
+    }
+
+    // Duração do slot vem da disponibilidade configurada para aquele dia/horário.
+    const rules = await getAvailability(consultant.id)
+    const rule = rules.find((r) => r.weekday === startsAt.getDay())
+    const slotMinutes = rule?.slotMinutes ?? 30
+    const endsAt = new Date(startsAt.getTime() + slotMinutes * 60000)
+
+    const appointment = await createAppointment(self.id, consultant.id, startsAt, endsAt, payload.objective)
+    if (!appointment) {
+      res.status(409).json({ message: 'Este horário não está mais disponível. Escolha outro.' })
+      return
+    }
+
+    const dateLabel = startsAt.toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
+    void notifyUser(consultant.id, 'appointment_confirmed', 'Nova consulta agendada', `${self.fullName || 'Um usuário'} agendou uma consulta para ${dateLabel}.`, { appointmentId: appointment.id })
+    void notifyUser(self.id, 'appointment_confirmed', 'Consulta confirmada', `Sua consulta com ${consultant.fullName || 'o consultor'} foi confirmada para ${dateLabel}.`, { appointmentId: appointment.id })
+    setImmediate(() => {
+      sendAppointmentEmail({ to: self.email, fullName: self.fullName || self.email, kind: 'confirmed', peerName: consultant.fullName || 'seu consultor', startsAt }).catch(() => {})
+    })
+
+    res.status(201).json({ appointment })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao criar agendamento.' })
+  }
+})
+
+app.get('/api/appointments', requireAuth, async (req, res) => {
+  try {
+    const self = await findById(req.auth!.userId)
+    if (!self) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    if (self.role === 'consultant') {
+      const appointments = await listAppointmentsForConsultant(self.id)
+      res.json({ appointments })
+    } else {
+      const appointments = await listAppointmentsForUser(self.id)
+      res.json({ appointments })
+    }
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar agendamentos.' })
+  }
+})
+
+async function resolveAppointmentAction(
+  req: express.Request,
+  res: express.Response,
+): Promise<{ appointment: import('./appointmentStore.js').Appointment; user: import('./userStore.js').StoredUser; consultant: import('./userStore.js').StoredUser } | null> {
+  const appointment = await getAppointmentById(String(req.params.id))
+  if (!appointment || !isAppointmentParticipant(appointment, req.auth!.userId)) {
+    res.status(404).json({ message: 'Agendamento não encontrado.' })
+    return null
+  }
+  const [user, consultant] = await Promise.all([findById(appointment.userId), findById(appointment.consultantId)])
+  if (!user || !consultant) {
+    res.status(404).json({ message: 'Agendamento não encontrado.' })
+    return null
+  }
+  return { appointment, user, consultant }
+}
+
+app.post('/api/appointments/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    const resolved = await resolveAppointmentAction(req, res)
+    if (!resolved) return
+    const { appointment, user, consultant } = resolved
+    if (appointment.status !== 'confirmed') {
+      res.status(400).json({ message: 'Este agendamento não pode mais ser cancelado.' })
+      return
+    }
+    await updateAppointmentStatus(appointment.id, 'cancelled')
+    const dateLabel = appointment.startsAt.toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
+    const cancelledBy = req.auth!.userId === user.id ? 'user' : 'consultant'
+    const notifyTargetId = cancelledBy === 'user' ? consultant.id : user.id
+    const cancellerName = cancelledBy === 'user' ? (user.fullName || 'O usuário') : (consultant.fullName || 'O consultor')
+    void notifyUser(notifyTargetId, 'appointment_cancelled', 'Consulta cancelada', `${cancellerName} cancelou a consulta de ${dateLabel}.`, { appointmentId: appointment.id })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao cancelar agendamento.' })
+  }
+})
+
+app.post('/api/appointments/:id/decline', requireAuth, requireRole('consultant'), async (req, res) => {
+  try {
+    const resolved = await resolveAppointmentAction(req, res)
+    if (!resolved) return
+    const { appointment, user, consultant } = resolved
+    if (appointment.consultantId !== req.auth!.userId) {
+      res.status(403).json({ message: 'Só o consultor responsável pode recusar este agendamento.' })
+      return
+    }
+    if (appointment.status !== 'confirmed') {
+      res.status(400).json({ message: 'Este agendamento não pode mais ser recusado.' })
+      return
+    }
+    await updateAppointmentStatus(appointment.id, 'declined')
+    const dateLabel = appointment.startsAt.toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
+    void notifyUser(user.id, 'appointment_declined', 'Agendamento recusado', `${consultant.fullName || 'O consultor'} não poderá atendê-lo(a) em ${dateLabel}.`, { appointmentId: appointment.id })
+    setImmediate(() => {
+      sendAppointmentEmail({ to: user.email, fullName: user.fullName || user.email, kind: 'declined', peerName: consultant.fullName || 'o consultor', startsAt: appointment.startsAt }).catch(() => {})
+    })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao recusar agendamento.' })
+  }
+})
+
 // ── Auth: forgot / reset password ─────────────────────────
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
@@ -1887,6 +2116,33 @@ app.post('/api/user/:id/avatar', (req, res) => {
 
 const httpServer = createServer(app)
 attachWebSocketServer(httpServer)
+
+// ── Lembrete de consulta (30 minutos antes) — Módulo 5 ─────
+// Roda a cada minuto enquanto o processo está de pé (PM2 mantém vivo).
+// Sem dependências extras (node-cron/bull) — suficiente para o volume
+// esperado e mais simples de operar numa VPS de 1 vCPU.
+setInterval(() => {
+  listAppointmentsNeedingReminder()
+    .then(async (appointments) => {
+      for (const appt of appointments) {
+        try {
+          const [user, consultant] = await Promise.all([findById(appt.userId), findById(appt.consultantId)])
+          if (!user || !consultant) continue
+
+          const dateLabel = appt.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })
+          void notifyUser(user.id, 'appointment_reminder', 'Consulta em 30 minutos', `Sua consulta com ${consultant.fullName || 'o consultor'} é às ${dateLabel}.`, { appointmentId: appt.id })
+          void notifyUser(consultant.id, 'appointment_reminder', 'Consulta em 30 minutos', `Sua consulta com ${user.fullName || 'o usuário'} é às ${dateLabel}.`, { appointmentId: appt.id })
+
+          sendAppointmentEmail({ to: user.email, fullName: user.fullName || user.email, kind: 'reminder', peerName: consultant.fullName || 'o consultor', startsAt: appt.startsAt }).catch(() => {})
+
+          await markReminderSent(appt.id)
+        } catch (err) {
+          console.error('[Reminder] Falha ao processar lembrete de agendamento:', err)
+        }
+      }
+    })
+    .catch((err) => console.error('[Reminder] Falha ao buscar agendamentos para lembrete:', err))
+}, 60_000)
 
 httpServer.listen(config.port, () => {
   console.log(`Viver & Saúde API pronta em http://localhost:${config.port}`)

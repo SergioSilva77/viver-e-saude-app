@@ -222,3 +222,95 @@ export async function sendPasswordResetLink(params: {
     return { sent: false, reason: msg }
   }
 }
+
+// ── E-mails de agendamento (Módulo 5) ──────────────────────
+
+export type AppointmentEmailKind = 'confirmed' | 'reminder' | 'declined' | 'cancelled'
+
+const APPOINTMENT_EMAIL_COPY: Record<AppointmentEmailKind, { icon: string; subject: string; heading: string }> = {
+  confirmed: { icon: '✅', subject: 'Consulta confirmada — Viver & Saúde', heading: 'Sua consulta foi confirmada!' },
+  reminder: { icon: '⏰', subject: 'Sua consulta é em 30 minutos — Viver & Saúde', heading: 'Sua consulta começa em 30 minutos' },
+  declined: { icon: '⚠️', subject: 'Consulta recusada — Viver & Saúde', heading: 'Seu agendamento foi recusado' },
+  cancelled: { icon: 'ℹ️', subject: 'Consulta cancelada — Viver & Saúde', heading: 'Seu agendamento foi cancelado' },
+}
+
+export async function sendAppointmentEmail(params: {
+  to: string
+  fullName: string
+  kind: AppointmentEmailKind
+  peerName: string
+  startsAt: Date
+}): Promise<{ sent: boolean; reason?: string }> {
+  const smtp = getSmtpConfig()
+  if (!smtp) {
+    console.warn('[Email] SMTP não configurado — e-mail de agendamento não enviado para', params.to)
+    return { sent: false, reason: 'SMTP não configurado' }
+  }
+
+  const copy = APPOINTMENT_EMAIL_COPY[params.kind]
+  const firstName = params.fullName.split(' ')[0]
+  const dateLabel = params.startsAt.toLocaleString('pt-BR', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo',
+  })
+
+  const bodyText: Record<AppointmentEmailKind, string> = {
+    confirmed: `Sua consulta com ${params.peerName} foi confirmada para ${dateLabel}.`,
+    reminder: `Sua consulta com ${params.peerName} começa em 30 minutos (${dateLabel}). Já deixe o app aberto!`,
+    declined: `Infelizmente ${params.peerName} não poderá atendê-lo(a) no horário marcado (${dateLabel}). Agende um novo horário quando puder.`,
+    cancelled: `O agendamento com ${params.peerName} para ${dateLabel} foi cancelado.`,
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.user, pass: smtp.pass },
+  })
+
+  const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f9f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#2e7d5e,#56a87a);padding:36px 32px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:8px;">${copy.icon}</div>
+            <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.02em;">Viver &amp; Saúde</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 32px;">
+            <h2 style="color:#1a2e26;font-size:20px;font-weight:700;margin:0 0 12px;">Olá, ${firstName}!</h2>
+            <p style="color:#4a6258;font-size:15px;line-height:1.6;margin:0 0 8px;">${copy.heading}</p>
+            <p style="color:#4a6258;font-size:15px;line-height:1.6;margin:0 0 24px;">${bodyText[params.kind]}</p>
+            <hr style="border:none;border-top:1px solid #e8f2ed;margin:0 0 24px;">
+            <p style="color:#b0c9bf;font-size:12px;line-height:1.5;margin:0;">© ${new Date().getFullYear()} Viver &amp; Saúde. Todos os direitos reservados.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  try {
+    await transporter.sendMail({
+      from: `"Viver & Saúde" <${smtp.from}>`,
+      to: params.to,
+      subject: copy.subject,
+      html,
+      text: `Olá, ${firstName}!\n\n${bodyText[params.kind]}`,
+    })
+    console.log(`[Email] E-mail de agendamento (${params.kind}) enviado para`, params.to)
+    return { sent: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[Email] Falha ao enviar e-mail de agendamento para', params.to, '—', msg)
+    return { sent: false, reason: msg }
+  }
+}
