@@ -13,11 +13,21 @@ import {
   markRead,
   type ConversationMessage,
 } from '../conversationStore.js'
+import {
+  createCall,
+  getCallById,
+  markCallOngoing,
+  endCall,
+  isCallParticipant,
+  getOtherParty,
+  type Call,
+  type CallType,
+} from '../callStore.js'
 
 // ── Signaling / presence WebSocket server ──────────────────
 // Módulo 1: autenticação + presença + ping/pong.
 // Módulo 2: chat de texto (chat:send / chat:read) reaproveitando esta mesma conexão.
-// Módulo 3 (chamadas) vai adicionar novos `type` de mensagem aqui dentro.
+// Módulo 3: chamadas de voz/vídeo (call:* / webrtc:*) reaproveitando a mesma conexão.
 
 interface ConnectedSocket {
   ws: WebSocket
@@ -30,6 +40,13 @@ const connections = new Map<string, Set<ConnectedSocket>>()
 // Timers de "debounce" para evitar marcar offline durante reconexões rápidas
 const offlineTimers = new Map<string, NodeJS.Timeout>()
 const OFFLINE_DEBOUNCE_MS = 5000
+
+// callId -> chamada + timer de "não atendeu" (só existe enquanto 'ringing')
+const activeCalls = new Map<string, { call: Call; ringTimer?: NodeJS.Timeout }>()
+const RING_TIMEOUT_MS = 30_000
+// userId -> callId da chamada em andamento (ringing ou ongoing) — usado para
+// impedir uma segunda chamada simultânea e para encerrar chamadas ao desconectar.
+const userActiveCall = new Map<string, string>()
 
 /** Formato de mensagem enviado ao cliente (datas como ISO string). */
 interface ChatMessageWire {
@@ -55,10 +72,21 @@ function toWire(message: ConversationMessage): ChatMessageWire {
 type ServerMessage =
   | { type: 'connected'; userId: string; role: string }
   | { type: 'pong'; ts: number }
-  | { type: 'presence'; userId: string; role: 'consultant'; status: 'online' | 'offline' }
+  | { type: 'presence'; userId: string; role: 'consultant'; status: 'online' | 'offline' | 'in_call' }
   | { type: 'chat:message'; message: ChatMessageWire }
   | { type: 'chat:ack'; clientId?: string; message: ChatMessageWire }
   | { type: 'chat:status'; conversationId: string; messageIds: string[]; status: 'delivered' | 'read' }
+  | { type: 'call:incoming'; callId: string; callerId: string; callerName: string; callerPhotoUrl: string; callType: CallType }
+  | { type: 'call:ringing'; callId: string }
+  | { type: 'call:accepted'; callId: string }
+  | { type: 'call:rejected'; callId: string }
+  | { type: 'call:cancelled'; callId: string }
+  | { type: 'call:missed'; callId: string }
+  | { type: 'call:busy'; callId?: string }
+  | { type: 'call:ended'; callId: string; durationSeconds: number }
+  | { type: 'webrtc:offer'; callId: string; sdp: unknown }
+  | { type: 'webrtc:answer'; callId: string; sdp: unknown }
+  | { type: 'webrtc:ice'; callId: string; candidate: unknown }
   | { type: 'error'; message: string }
 
 function send(ws: WebSocket, message: ServerMessage): void {
@@ -121,6 +149,38 @@ async function handleConsultantOnline(userId: string): Promise<void> {
   }
   await setConsultantStatus(userId, 'online')
   broadcast({ type: 'presence', userId, role: 'consultant', status: 'online' })
+}
+
+/**
+ * Encerra uma chamada (por qualquer motivo) e limpa todo o estado em memória:
+ * timer de "não atendeu", mapa de chamada ativa dos dois participantes, e —
+ * se um dos lados era consultor em atendimento — devolve o status para
+ * "online" e avisa a presença.
+ */
+async function finalizeCall(callId: string, status: 'ended' | 'rejected' | 'cancelled' | 'missed'): Promise<Call | null> {
+  const active = activeCalls.get(callId)
+  if (active?.ringTimer) clearTimeout(active.ringTimer)
+  activeCalls.delete(callId)
+
+  const updated = await endCall(callId, status)
+  if (!updated) return null
+
+  for (const participantId of [updated.callerId, updated.calleeId]) {
+    if (userActiveCall.get(participantId) === callId) {
+      userActiveCall.delete(participantId)
+    }
+  }
+
+  // Se algum dos participantes é consultor "em chamada", libera para online.
+  for (const participantId of [updated.callerId, updated.calleeId]) {
+    const participant = await findById(participantId)
+    if (participant?.role === 'consultant') {
+      await setConsultantStatus(participantId, 'online')
+      broadcast({ type: 'presence', userId: participantId, role: 'consultant', status: 'online' })
+    }
+  }
+
+  return updated
 }
 
 function scheduleConsultantOffline(userId: string): void {
@@ -265,7 +325,136 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
             break
           }
 
-          // Módulo 3 (chamadas) vai adicionar novos cases aqui.
+          case 'call:invite': {
+            const body = msg as { calleeId?: unknown; callType?: unknown }
+            const calleeId = typeof body.calleeId === 'string' ? body.calleeId : ''
+            const callType: CallType = body.callType === 'video' ? 'video' : 'voice'
+
+            if (!calleeId) {
+              send(ws, { type: 'error', message: 'call:invite requer calleeId.' })
+              break
+            }
+            if (userActiveCall.has(user.id)) {
+              send(ws, { type: 'call:busy' })
+              break
+            }
+            try {
+              const callee = await findById(calleeId)
+              if (!callee || callee.role === user.role) {
+                send(ws, { type: 'error', message: 'Só é possível ligar entre um usuário e um consultor.' })
+                break
+              }
+              // "Atende somente um usuário por vez": consultor já ocupado (em
+              // chamada ou já chamando/sendo chamado) não pode receber outra.
+              if (userActiveCall.has(calleeId)) {
+                send(ws, { type: 'call:busy' })
+                break
+              }
+              if (!isUserOnline(calleeId)) {
+                send(ws, { type: 'error', message: 'Este contato está offline agora.' })
+                break
+              }
+
+              const call = await createCall(user.id, calleeId, callType)
+              userActiveCall.set(user.id, call.id)
+              userActiveCall.set(calleeId, call.id)
+
+              const ringTimer = setTimeout(async () => {
+                const finalized = await finalizeCall(call.id, 'missed')
+                if (finalized) {
+                  sendToUser(finalized.callerId, { type: 'call:missed', callId: call.id })
+                  sendToUser(finalized.calleeId, { type: 'call:missed', callId: call.id })
+                }
+              }, RING_TIMEOUT_MS)
+              activeCalls.set(call.id, { call, ringTimer })
+
+              send(ws, { type: 'call:ringing', callId: call.id })
+              sendToUser(calleeId, {
+                type: 'call:incoming',
+                callId: call.id,
+                callerId: user.id,
+                callerName: (await findById(user.id))?.fullName ?? '',
+                callerPhotoUrl: (await findById(user.id))?.photoUrl ?? '',
+                callType,
+              })
+            } catch (err) {
+              console.error('[WS] Erro ao processar call:invite:', err)
+              send(ws, { type: 'error', message: 'Falha ao iniciar chamada.' })
+            }
+            break
+          }
+
+          case 'call:accept': {
+            const callId = typeof (msg as { callId?: unknown }).callId === 'string' ? (msg as { callId: string }).callId : ''
+            if (!callId) { send(ws, { type: 'error', message: 'call:accept requer callId.' }); break }
+            try {
+              const call = await getCallById(callId)
+              if (!call || call.calleeId !== user.id || call.status !== 'ringing') {
+                send(ws, { type: 'error', message: 'Chamada não encontrada ou já finalizada.' })
+                break
+              }
+              const active = activeCalls.get(callId)
+              if (active?.ringTimer) clearTimeout(active.ringTimer)
+              await markCallOngoing(callId)
+              if (user.role === 'consultant') {
+                await setConsultantStatus(user.id, 'in_call')
+                broadcast({ type: 'presence', userId: user.id, role: 'consultant', status: 'in_call' })
+              }
+              sendToUser(call.callerId, { type: 'call:accepted', callId })
+              send(ws, { type: 'call:accepted', callId })
+            } catch (err) {
+              console.error('[WS] Erro ao processar call:accept:', err)
+              send(ws, { type: 'error', message: 'Falha ao aceitar chamada.' })
+            }
+            break
+          }
+
+          case 'call:reject':
+          case 'call:cancel':
+          case 'call:end': {
+            const callId = typeof (msg as { callId?: unknown }).callId === 'string' ? (msg as { callId: string }).callId : ''
+            if (!callId) { send(ws, { type: 'error', message: `${type} requer callId.` }); break }
+            try {
+              const call = await getCallById(callId)
+              if (!call || !isCallParticipant(call, user.id)) {
+                send(ws, { type: 'error', message: 'Chamada não encontrada.' })
+                break
+              }
+              const finalStatus = type === 'call:reject' ? 'rejected' : type === 'call:cancel' ? 'cancelled' : 'ended'
+              const finalized = await finalizeCall(callId, finalStatus)
+              if (!finalized) break // já tinha sido finalizada por outro motivo (ex: timeout)
+
+              const otherParty = getOtherParty(finalized, user.id)
+              const eventType = finalStatus === 'rejected' ? 'call:rejected'
+                : finalStatus === 'cancelled' ? 'call:cancelled'
+                : 'call:ended'
+              sendToUser(otherParty, { type: eventType, callId, durationSeconds: finalized.durationSeconds ?? 0 } as ServerMessage)
+              send(ws, { type: eventType, callId, durationSeconds: finalized.durationSeconds ?? 0 } as ServerMessage)
+            } catch (err) {
+              console.error(`[WS] Erro ao processar ${type}:`, err)
+              send(ws, { type: 'error', message: 'Falha ao encerrar chamada.' })
+            }
+            break
+          }
+
+          case 'webrtc:offer':
+          case 'webrtc:answer':
+          case 'webrtc:ice': {
+            const body = msg as { callId?: unknown; sdp?: unknown; candidate?: unknown }
+            const callId = typeof body.callId === 'string' ? body.callId : ''
+            if (!callId) { send(ws, { type: 'error', message: `${type} requer callId.` }); break }
+            const active = activeCalls.get(callId)
+            if (!active || !isCallParticipant(active.call, user.id)) {
+              send(ws, { type: 'error', message: 'Chamada não encontrada ou já finalizada.' })
+              break
+            }
+            const otherParty = getOtherParty(active.call, user.id)
+            if (type === 'webrtc:offer') sendToUser(otherParty, { type: 'webrtc:offer', callId, sdp: body.sdp })
+            else if (type === 'webrtc:answer') sendToUser(otherParty, { type: 'webrtc:answer', callId, sdp: body.sdp })
+            else sendToUser(otherParty, { type: 'webrtc:ice', callId, candidate: body.candidate })
+            break
+          }
+
           default:
             send(ws, { type: 'error', message: `Tipo de mensagem desconhecido: ${type}` })
         }
@@ -280,6 +469,17 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
         console.log(`[WS] Desconectado: userId=${user.id} role=${payload.role}`)
         if (payload.role === 'consultant' && !isUserOnline(user.id)) {
           scheduleConsultantOffline(user.id)
+        }
+        // Se o usuário caiu no meio de uma chamada e não há outra conexão dele
+        // ativa (multi-dispositivo), encerra a chamada como se tivesse desligado.
+        const activeCallId = userActiveCall.get(user.id)
+        if (activeCallId && !isUserOnline(user.id)) {
+          finalizeCall(activeCallId, 'ended').then((finalized) => {
+            if (finalized) {
+              const otherParty = getOtherParty(finalized, user.id)
+              sendToUser(otherParty, { type: 'call:ended', callId: activeCallId, durationSeconds: finalized.durationSeconds ?? 0 })
+            }
+          }).catch((err) => console.error('[WS] Erro ao finalizar chamada após desconexão:', err))
         }
       })
 

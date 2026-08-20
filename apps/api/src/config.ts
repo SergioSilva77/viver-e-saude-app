@@ -72,6 +72,9 @@ export const config = {
   // Em produção DEVE vir de env var — o fallback abaixo é só para dev local e
   // gera um aviso no boot para não passar despercebido.
   jwtSecret: process.env.JWT_SECRET ?? '',
+  // Servidor TURN/STUN (coturn) para WebRTC — Módulo 3 (chamadas).
+  turnSecret: process.env.TURN_SECRET ?? '',
+  turnHost: process.env.TURN_HOST ?? '',
 }
 
 if (!config.jwtSecret) {

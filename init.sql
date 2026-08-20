@@ -110,3 +110,19 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations(consultant_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);
+
+-- ── Chamadas de voz/vídeo (usuário ↔ consultor) ─────────────
+CREATE TABLE IF NOT EXISTS calls (
+  id VARCHAR PRIMARY KEY,
+  caller_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  callee_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR NOT NULL DEFAULT 'voice' CHECK (type IN ('voice', 'video')),
+  status VARCHAR NOT NULL DEFAULT 'ringing' CHECK (status IN ('ringing', 'ongoing', 'ended', 'missed', 'rejected', 'cancelled')),
+  created_at TIMESTAMP DEFAULT NOW(),
+  answered_at TIMESTAMP,
+  ended_at TIMESTAMP,
+  duration_seconds INT
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_caller_id ON calls(caller_id);
+CREATE INDEX IF NOT EXISTS idx_calls_callee_id ON calls(callee_id);

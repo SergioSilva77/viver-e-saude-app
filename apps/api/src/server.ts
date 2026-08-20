@@ -37,6 +37,7 @@ import {
 } from './conversationStore.js'
 import { createServer } from 'node:http'
 import { attachWebSocketServer, notifyDelivered, notifyRead } from './realtime/wsServer.js'
+import { generateTurnCredentials } from './turnCredentials.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -340,6 +341,22 @@ async function runMigrations(): Promise<void> {
     { label: 'idx_conversations_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)' },
     { label: 'idx_conversations_consultant_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations(consultant_id)' },
     { label: 'idx_conversation_messages_conversation_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id)' },
+    {
+      label: 'calls table',
+      sql: `CREATE TABLE IF NOT EXISTS calls (
+        id VARCHAR PRIMARY KEY,
+        caller_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        callee_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR NOT NULL DEFAULT 'voice' CHECK (type IN ('voice', 'video')),
+        status VARCHAR NOT NULL DEFAULT 'ringing' CHECK (status IN ('ringing', 'ongoing', 'ended', 'missed', 'rejected', 'cancelled')),
+        created_at TIMESTAMP DEFAULT NOW(),
+        answered_at TIMESTAMP,
+        ended_at TIMESTAMP,
+        duration_seconds INT
+      )`,
+    },
+    { label: 'idx_calls_caller_id', sql: 'CREATE INDEX IF NOT EXISTS idx_calls_caller_id ON calls(caller_id)' },
+    { label: 'idx_calls_callee_id', sql: 'CREATE INDEX IF NOT EXISTS idx_calls_callee_id ON calls(callee_id)' },
   ]
 
   for (const step of steps) {
@@ -1372,6 +1389,21 @@ app.post('/api/conversations/:id/read', requireAuth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao marcar como lida.' })
   }
+})
+
+// ── Chamadas (voz/vídeo) — Módulo 3 ────────────────────────
+// A sinalização (convite, aceitar, encerrar, offer/answer/ICE) acontece via
+// WebSocket (ver realtime/wsServer.ts). Esta rota só entrega credenciais
+// TURN/STUN temporárias para o cliente conseguir montar a conexão WebRTC.
+app.get('/api/turn-credentials', requireAuth, (req, res) => {
+  if (!config.turnSecret || !config.turnHost) {
+    res.status(503).json({
+      message: 'Servidor de chamadas (TURN) não configurado. Defina TURN_SECRET e TURN_HOST no .env.',
+    })
+    return
+  }
+  const credentials = generateTurnCredentials(req.auth!.userId, config.turnSecret, config.turnHost)
+  res.json(credentials)
 })
 
 // ── Auth: forgot / reset password ─────────────────────────
