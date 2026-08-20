@@ -61,6 +61,22 @@ export function CallOverlay() {
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       )}
+
+      {manager.limitWarningSeconds !== null && (
+        <div
+          style={{
+            position: 'absolute', top: 12, left: 16, right: 16, zIndex: 10,
+            background: 'rgba(230,126,34,0.95)', borderRadius: 12, padding: '10px 14px',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <i className="bi bi-exclamation-triangle-fill" style={{ color: '#fff' }} />
+          <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
+            Faltam {Math.ceil((manager.limitWarningSeconds ?? 300) / 60)} minutos no seu limite mensal (Nível 1).
+          </span>
+        </div>
+      )}
+
       {isActiveVideo && (
         <video
           ref={localVideoRef}

@@ -29,6 +29,8 @@ class CallManagerImpl {
   cameraEnabled = true
   elapsedSeconds = 0
   errorMessage: string | null = null
+  /** Segundos restantes quando o aviso de limite (Nível 1) chega — null = sem aviso ativo. */
+  limitWarningSeconds: number | null = null
 
   private pc: RTCPeerConnection | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
@@ -177,7 +179,15 @@ class CallManagerImpl {
         break
 
       case 'call:ended':
+        if (msg.reason === 'limit_reached') {
+          this.errorMessage = 'Sua chamada foi encerrada: limite mensal do Nível 1 atingido.'
+        }
         this.teardown()
+        break
+
+      case 'call:limit_warning':
+        this.limitWarningSeconds = (msg.remainingSeconds as number) ?? 300
+        this.emit()
         break
 
       case 'webrtc:offer':
@@ -326,6 +336,7 @@ class CallManagerImpl {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     this.answeredAt = null
+    this.limitWarningSeconds = null
     this.elapsedSeconds = 0
 
     this.localStream?.getTracks().forEach((t) => t.stop())
