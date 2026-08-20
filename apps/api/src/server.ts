@@ -26,8 +26,17 @@ import { createResetToken, consumeResetToken } from './resetTokenStore.js'
 import { sendPasswordResetLink } from './emailService.js'
 import { signUserToken, requireAuth } from './auth.js'
 import { setUserRole, listConsultants, getConsultantProfile, getAllConsultantProfilesMap } from './consultantStore.js'
+import {
+  getOrCreateConversation,
+  listConversationsForUser,
+  getConversationById,
+  getMessages as getConversationMessages,
+  isParticipant as isConversationParticipant,
+  markDeliveredInConversation,
+  markRead as markConversationRead,
+} from './conversationStore.js'
 import { createServer } from 'node:http'
-import { attachWebSocketServer } from './realtime/wsServer.js'
+import { attachWebSocketServer, notifyDelivered, notifyRead } from './realtime/wsServer.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -275,34 +284,75 @@ function requireAdminToken(
 // ── App ────────────────────────────────────────────────────
 const app = express()
 
-// ── Migration: add columns if missing ───────────────────────
-import('./db.js').then(({ query: dbQuery }) => {
-  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR DEFAULT ''")
-    .then(() => console.log('[DB] photo_url column ensured'))
-    .catch(() => { /* column already exists or DB not ready */ })
-  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS health_profile JSONB DEFAULT '{}'")
-    .then(() => console.log('[DB] health_profile column ensured'))
-    .catch(() => { /* column already exists or DB not ready */ })
-  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS person_summary TEXT DEFAULT ''")
-    .then(() => console.log('[DB] person_summary column ensured'))
-    .catch(() => { /* column already exists or DB not ready */ })
-  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'user'")
-    .then(() => console.log('[DB] role column ensured'))
-    .catch(() => { /* column already exists or DB not ready */ })
-  dbQuery('ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0')
-    .then(() => console.log('[DB] token_version column ensured'))
-    .catch(() => { /* column already exists or DB not ready */ })
-  dbQuery(`CREATE TABLE IF NOT EXISTS consultant_profiles (
-      user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      specialty VARCHAR DEFAULT '',
-      bio TEXT DEFAULT '',
-      status VARCHAR NOT NULL DEFAULT 'offline' CHECK (status IN ('offline', 'online', 'in_call')),
-      max_concurrent_users INT NOT NULL DEFAULT 1,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )`)
-    .then(() => console.log('[DB] consultant_profiles table ensured'))
-    .catch(() => { /* table already exists or DB not ready */ })
-})
+// ── Migration: add columns/tables if missing ─────────────────
+// IMPORTANTE: roda em sequência (await), nunca em paralelo — algumas
+// tabelas têm FOREIGN KEY para outras criadas nesta mesma lista
+// (ex: conversation_messages → conversations), então disparar tudo
+// em paralelo pode fazer uma tabela tentar referenciar outra que
+// ainda não existe, e a falha (silenciosa, por design, para não travar
+// o boot em bancos já migrados) faria a tabela nunca ser criada.
+async function runMigrations(): Promise<void> {
+  const { query: dbQuery } = await import('./db.js')
+
+  const steps: { label: string; sql: string }[] = [
+    { label: 'photo_url column', sql: "ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url VARCHAR DEFAULT ''" },
+    { label: 'health_profile column', sql: "ALTER TABLE users ADD COLUMN IF NOT EXISTS health_profile JSONB DEFAULT '{}'" },
+    { label: 'person_summary column', sql: "ALTER TABLE users ADD COLUMN IF NOT EXISTS person_summary TEXT DEFAULT ''" },
+    { label: 'role column', sql: "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'user'" },
+    { label: 'token_version column', sql: 'ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0' },
+    {
+      label: 'consultant_profiles table',
+      sql: `CREATE TABLE IF NOT EXISTS consultant_profiles (
+        user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        specialty VARCHAR DEFAULT '',
+        bio TEXT DEFAULT '',
+        status VARCHAR NOT NULL DEFAULT 'offline' CHECK (status IN ('offline', 'online', 'in_call')),
+        max_concurrent_users INT NOT NULL DEFAULT 1,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`,
+    },
+    {
+      label: 'conversations table',
+      sql: `CREATE TABLE IF NOT EXISTS conversations (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        last_message_preview VARCHAR DEFAULT '',
+        last_message_at TIMESTAMP,
+        UNIQUE (user_id, consultant_id)
+      )`,
+    },
+    {
+      label: 'conversation_messages table',
+      sql: `CREATE TABLE IF NOT EXISTS conversation_messages (
+        id VARCHAR PRIMARY KEY,
+        conversation_id VARCHAR NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        sender_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        status VARCHAR NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read')),
+        created_at TIMESTAMP DEFAULT NOW(),
+        delivered_at TIMESTAMP,
+        read_at TIMESTAMP
+      )`,
+    },
+    { label: 'idx_conversations_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)' },
+    { label: 'idx_conversations_consultant_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations(consultant_id)' },
+    { label: 'idx_conversation_messages_conversation_id', sql: 'CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id)' },
+  ]
+
+  for (const step of steps) {
+    try {
+      await dbQuery(step.sql)
+      console.log(`[DB] ${step.label} ensured`)
+    } catch (err) {
+      console.error(`[DB] Falha ao aplicar "${step.label}":`, err instanceof Error ? err.message : err)
+    }
+  }
+}
+
+runMigrations().catch((err) => console.error('[DB] Falha ao rodar migrações:', err))
 
 // Webhook route must be before express.json()
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (request, response) => {
@@ -1237,6 +1287,90 @@ app.get('/api/auth/session', requireAuth, async (req, res) => {
     })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar usuário.' })
+  }
+})
+
+// ── Conversas (chat usuário ↔ consultor) — Módulo 2 ────────
+// Todas protegidas por JWT (requireAuth). O histórico é persistido no
+// Postgres; o envio/recebimento em tempo real acontece via WebSocket
+// (ver realtime/wsServer.ts), que reaproveita as mesmas tabelas.
+
+const createConversationSchema = z.object({
+  peerId: z.string().min(1),
+})
+
+app.get('/api/conversations', requireAuth, async (req, res) => {
+  try {
+    const conversations = await listConversationsForUser(req.auth!.userId)
+    res.json({ conversations })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar conversas.' })
+  }
+})
+
+app.post('/api/conversations', requireAuth, async (req, res) => {
+  try {
+    const { peerId } = createConversationSchema.parse(req.body)
+    const self = await findById(req.auth!.userId)
+    const peer = await findById(peerId)
+    if (!self || !peer) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    if (self.role === peer.role) {
+      res.status(400).json({ message: 'Conversas só podem ser criadas entre um usuário e um consultor.' })
+      return
+    }
+    const [userId, consultantId] = self.role === 'consultant' ? [peer.id, self.id] : [self.id, peer.id]
+    const conversation = await getOrCreateConversation(userId, consultantId)
+    res.status(201).json({ conversation })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao criar conversa.' })
+  }
+})
+
+app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
+  try {
+    const conversationId = String(req.params.id)
+    const conversation = await getConversationById(conversationId)
+    if (!conversation || !isConversationParticipant(conversation, req.auth!.userId)) {
+      res.status(404).json({ message: 'Conversa não encontrada.' })
+      return
+    }
+    const before = typeof req.query.before === 'string' ? req.query.before : undefined
+    const limit = req.query.limit ? Number(req.query.limit) : undefined
+    const messages = await getConversationMessages(conversationId, { before, limit })
+
+    // Marca como entregues as mensagens do interlocutor que ainda estavam pendentes.
+    const delivered = await markDeliveredInConversation(conversationId, req.auth!.userId)
+    if (delivered.length > 0) {
+      notifyDelivered(conversationId, delivered)
+      for (const msg of messages) {
+        if (delivered.some((d) => d.id === msg.id)) msg.status = 'delivered'
+      }
+    }
+
+    res.json({ messages })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao buscar mensagens.' })
+  }
+})
+
+app.post('/api/conversations/:id/read', requireAuth, async (req, res) => {
+  try {
+    const conversationId = String(req.params.id)
+    const conversation = await getConversationById(conversationId)
+    if (!conversation || !isConversationParticipant(conversation, req.auth!.userId)) {
+      res.status(404).json({ message: 'Conversa não encontrada.' })
+      return
+    }
+    const readMessages = await markConversationRead(conversationId, req.auth!.userId)
+    if (readMessages.length > 0) {
+      notifyRead(conversationId, readMessages)
+    }
+    res.json({ ok: true, count: readMessages.length })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao marcar como lida.' })
   }
 })
 

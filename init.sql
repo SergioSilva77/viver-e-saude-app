@@ -82,3 +82,31 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id);
+
+-- ── Chat humano ↔ humano (usuário ↔ consultor) ──────────────
+-- Tabelas próprias — não confundir com chats/chat_messages (chat com a IA).
+CREATE TABLE IF NOT EXISTS conversations (
+  id VARCHAR PRIMARY KEY,
+  user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  consultant_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  last_message_preview VARCHAR DEFAULT '',
+  last_message_at TIMESTAMP,
+  UNIQUE (user_id, consultant_id)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id VARCHAR PRIMARY KEY,
+  conversation_id VARCHAR NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  status VARCHAR NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read')),
+  created_at TIMESTAMP DEFAULT NOW(),
+  delivered_at TIMESTAMP,
+  read_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_consultant_id ON conversations(consultant_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id ON conversation_messages(conversation_id);

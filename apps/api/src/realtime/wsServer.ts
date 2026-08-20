@@ -3,11 +3,21 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { verifyUserToken } from '../auth.js'
 import { findById } from '../userStore.js'
 import { setConsultantStatus } from '../consultantStore.js'
+import {
+  getConversationById,
+  isParticipant,
+  getPeerId,
+  addMessage,
+  markMessageDelivered,
+  markDeliveredForUserEverywhere,
+  markRead,
+  type ConversationMessage,
+} from '../conversationStore.js'
 
 // ── Signaling / presence WebSocket server ──────────────────
-// Módulo 1: só autenticação + presença + ping/pong (walking skeleton).
-// Módulos futuros (chat, chamadas) vão adicionar novos `type` de mensagem
-// aqui dentro, reaproveitando a mesma conexão/autenticação.
+// Módulo 1: autenticação + presença + ping/pong.
+// Módulo 2: chat de texto (chat:send / chat:read) reaproveitando esta mesma conexão.
+// Módulo 3 (chamadas) vai adicionar novos `type` de mensagem aqui dentro.
 
 interface ConnectedSocket {
   ws: WebSocket
@@ -21,10 +31,34 @@ const connections = new Map<string, Set<ConnectedSocket>>()
 const offlineTimers = new Map<string, NodeJS.Timeout>()
 const OFFLINE_DEBOUNCE_MS = 5000
 
+/** Formato de mensagem enviado ao cliente (datas como ISO string). */
+interface ChatMessageWire {
+  id: string
+  conversationId: string
+  senderId: string
+  content: string
+  status: string
+  createdAt: string
+}
+
+function toWire(message: ConversationMessage): ChatMessageWire {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    senderId: message.senderId,
+    content: message.content,
+    status: message.status,
+    createdAt: message.createdAt.toISOString(),
+  }
+}
+
 type ServerMessage =
   | { type: 'connected'; userId: string; role: string }
   | { type: 'pong'; ts: number }
   | { type: 'presence'; userId: string; role: 'consultant'; status: 'online' | 'offline' }
+  | { type: 'chat:message'; message: ChatMessageWire }
+  | { type: 'chat:ack'; clientId?: string; message: ChatMessageWire }
+  | { type: 'chat:status'; conversationId: string; messageIds: string[]; status: 'delivered' | 'read' }
   | { type: 'error'; message: string }
 
 function send(ws: WebSocket, message: ServerMessage): void {
@@ -53,6 +87,30 @@ export function sendToUser(userId: string, message: ServerMessage): void {
 
 export function isUserOnline(userId: string): boolean {
   return (connections.get(userId)?.size ?? 0) > 0
+}
+
+/** Notifica o(s) remetente(s) de que suas mensagens foram entregues (chamado pela rota REST de histórico). */
+export function notifyDelivered(conversationId: string, delivered: { id: string; senderId: string }[]): void {
+  const bySender = new Map<string, string[]>()
+  for (const { id, senderId } of delivered) {
+    if (!bySender.has(senderId)) bySender.set(senderId, [])
+    bySender.get(senderId)!.push(id)
+  }
+  for (const [senderId, messageIds] of bySender) {
+    sendToUser(senderId, { type: 'chat:status', conversationId, messageIds, status: 'delivered' })
+  }
+}
+
+/** Notifica o(s) remetente(s) de que suas mensagens foram lidas (chamado pela rota REST de leitura). */
+export function notifyRead(conversationId: string, readMessages: { id: string; senderId: string }[]): void {
+  const bySender = new Map<string, string[]>()
+  for (const { id, senderId } of readMessages) {
+    if (!bySender.has(senderId)) bySender.set(senderId, [])
+    bySender.get(senderId)!.push(id)
+  }
+  for (const [senderId, messageIds] of bySender) {
+    sendToUser(senderId, { type: 'chat:status', conversationId, messageIds, status: 'read' })
+  }
 }
 
 async function handleConsultantOnline(userId: string): Promise<void> {
@@ -115,7 +173,18 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
         await handleConsultantOnline(user.id)
       }
 
-      ws.on('message', (raw) => {
+      // Mensagens que chegaram enquanto este usuário estava offline agora
+      // podem ser marcadas como "entregues" — e os remetentes avisados.
+      try {
+        const deliveredBatches = await markDeliveredForUserEverywhere(user.id)
+        for (const batch of deliveredBatches) {
+          notifyDelivered(batch.conversationId, batch.messageIds.map((id) => ({ id, senderId: batch.senderId })))
+        }
+      } catch (err) {
+        console.error('[WS] Erro ao marcar mensagens como entregues na conexão:', err)
+      }
+
+      ws.on('message', async (raw) => {
         let msg: unknown
         try {
           msg = JSON.parse(raw.toString())
@@ -135,7 +204,68 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
           case 'ping':
             send(ws, { type: 'pong', ts: Date.now() })
             break
-          // Módulo 2 (chat) e Módulo 3 (chamadas) vão adicionar novos cases aqui.
+
+          case 'chat:send': {
+            const body = msg as { conversationId?: unknown; content?: unknown; clientId?: unknown }
+            const conversationId = typeof body.conversationId === 'string' ? body.conversationId : ''
+            const content = typeof body.content === 'string' ? body.content.trim() : ''
+            const clientId = typeof body.clientId === 'string' ? body.clientId : undefined
+
+            if (!conversationId || !content) {
+              send(ws, { type: 'error', message: 'chat:send requer conversationId e content.' })
+              break
+            }
+            if (content.length > 4000) {
+              send(ws, { type: 'error', message: 'Mensagem muito longa (máx. 4000 caracteres).' })
+              break
+            }
+
+            try {
+              const conversation = await getConversationById(conversationId)
+              if (!conversation || !isParticipant(conversation, user.id)) {
+                send(ws, { type: 'error', message: 'Conversa não encontrada.' })
+                break
+              }
+
+              const message = await addMessage(conversationId, user.id, content)
+              send(ws, { type: 'chat:ack', clientId, message: toWire(message) })
+
+              const peerId = getPeerId(conversation, user.id)
+              if (isUserOnline(peerId)) {
+                sendToUser(peerId, { type: 'chat:message', message: toWire(message) })
+                await markMessageDelivered(message.id)
+                send(ws, { type: 'chat:status', conversationId, messageIds: [message.id], status: 'delivered' })
+              }
+            } catch (err) {
+              console.error('[WS] Erro ao processar chat:send:', err)
+              send(ws, { type: 'error', message: 'Falha ao enviar mensagem.' })
+            }
+            break
+          }
+
+          case 'chat:read': {
+            const body = msg as { conversationId?: unknown }
+            const conversationId = typeof body.conversationId === 'string' ? body.conversationId : ''
+            if (!conversationId) {
+              send(ws, { type: 'error', message: 'chat:read requer conversationId.' })
+              break
+            }
+            try {
+              const conversation = await getConversationById(conversationId)
+              if (!conversation || !isParticipant(conversation, user.id)) {
+                send(ws, { type: 'error', message: 'Conversa não encontrada.' })
+                break
+              }
+              const readMessages = await markRead(conversationId, user.id)
+              if (readMessages.length > 0) notifyRead(conversationId, readMessages)
+            } catch (err) {
+              console.error('[WS] Erro ao processar chat:read:', err)
+              send(ws, { type: 'error', message: 'Falha ao marcar como lida.' })
+            }
+            break
+          }
+
+          // Módulo 3 (chamadas) vai adicionar novos cases aqui.
           default:
             send(ws, { type: 'error', message: `Tipo de mensagem desconhecido: ${type}` })
         }
