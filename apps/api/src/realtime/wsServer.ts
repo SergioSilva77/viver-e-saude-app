@@ -23,6 +23,13 @@ import {
   type Call,
   type CallType,
 } from '../callStore.js'
+import {
+  createNotification,
+  getDeviceTokensForUser,
+  removeDeviceTokens,
+  type NotificationType,
+} from '../notificationStore.js'
+import { sendPushToTokens } from '../fcmService.js'
 
 // ── Signaling / presence WebSocket server ──────────────────
 // Módulo 1: autenticação + presença + ping/pong.
@@ -87,6 +94,7 @@ type ServerMessage =
   | { type: 'webrtc:offer'; callId: string; sdp: unknown }
   | { type: 'webrtc:answer'; callId: string; sdp: unknown }
   | { type: 'webrtc:ice'; callId: string; candidate: unknown }
+  | { type: 'notification'; notification: { id: string; type: string; title: string; body: string; data: Record<string, unknown>; createdAt: string } }
   | { type: 'error'; message: string }
 
 function send(ws: WebSocket, message: ServerMessage): void {
@@ -115,6 +123,48 @@ export function sendToUser(userId: string, message: ServerMessage): void {
 
 export function isUserOnline(userId: string): boolean {
   return (connections.get(userId)?.size ?? 0) > 0
+}
+
+/**
+ * Ponto único de notificação (Módulo 4): sempre grava no banco (in-app,
+ * "sininho"); se o usuário estiver com o app aberto (WS conectado) empurra
+ * em tempo real; caso contrário, tenta push via FCM (se configurado) para
+ * acordar o dispositivo. Nunca lança erro — notificação é best-effort e
+ * não pode derrubar o fluxo principal (enviar mensagem, ligar, etc).
+ */
+export async function notifyUser(
+  userId: string,
+  type: NotificationType,
+  title: string,
+  body: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const notification = await createNotification(userId, type, title, body, data)
+
+    if (isUserOnline(userId)) {
+      sendToUser(userId, {
+        type: 'notification',
+        notification: {
+          id: notification.id,
+          type: notification.type,
+          title: notification.title,
+          body: notification.body,
+          data: notification.data,
+          createdAt: notification.createdAt.toISOString(),
+        },
+      })
+      return
+    }
+
+    const tokens = await getDeviceTokensForUser(userId)
+    if (tokens.length === 0) return
+    const dataAsStrings = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]))
+    const { invalidTokens } = await sendPushToTokens(tokens, { title, body, data: dataAsStrings })
+    if (invalidTokens.length > 0) await removeDeviceTokens(invalidTokens)
+  } catch (err) {
+    console.error('[Notify] Falha ao notificar usuário:', err)
+  }
 }
 
 /** Notifica o(s) remetente(s) de que suas mensagens foram entregues (chamado pela rota REST de histórico). */
@@ -295,6 +345,9 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
                 sendToUser(peerId, { type: 'chat:message', message: toWire(message) })
                 await markMessageDelivered(message.id)
                 send(ws, { type: 'chat:status', conversationId, messageIds: [message.id], status: 'delivered' })
+              } else {
+                const preview = content.length > 80 ? `${content.slice(0, 77)}...` : content
+                void notifyUser(peerId, 'new_message', user.fullName || 'Nova mensagem', preview, { conversationId })
               }
             } catch (err) {
               console.error('[WS] Erro ao processar chat:send:', err)
@@ -373,10 +426,17 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
                 type: 'call:incoming',
                 callId: call.id,
                 callerId: user.id,
-                callerName: (await findById(user.id))?.fullName ?? '',
-                callerPhotoUrl: (await findById(user.id))?.photoUrl ?? '',
+                callerName: user.fullName ?? '',
+                callerPhotoUrl: user.photoUrl ?? '',
                 callType,
               })
+              void notifyUser(
+                calleeId,
+                'incoming_call',
+                'Chamada recebida',
+                `${user.fullName || 'Alguém'} está te ligando (${callType === 'video' ? 'videochamada' : 'chamada de voz'}).`,
+                { callId: call.id },
+              )
             } catch (err) {
               console.error('[WS] Erro ao processar call:invite:', err)
               send(ws, { type: 'error', message: 'Falha ao iniciar chamada.' })

@@ -126,3 +126,27 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE INDEX IF NOT EXISTS idx_calls_caller_id ON calls(caller_id);
 CREATE INDEX IF NOT EXISTS idx_calls_callee_id ON calls(callee_id);
+
+-- ── Notificações (sininho in-app + push) ────────────────────
+CREATE TABLE IF NOT EXISTS notifications (
+  id VARCHAR PRIMARY KEY,
+  user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR NOT NULL,
+  title VARCHAR NOT NULL,
+  body VARCHAR NOT NULL,
+  data JSONB DEFAULT '{}',
+  read_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+
+CREATE TABLE IF NOT EXISTS device_tokens (
+  token VARCHAR PRIMARY KEY,
+  user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform VARCHAR NOT NULL DEFAULT 'android',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id);

@@ -38,6 +38,14 @@ import {
 import { createServer } from 'node:http'
 import { attachWebSocketServer, notifyDelivered, notifyRead } from './realtime/wsServer.js'
 import { generateTurnCredentials } from './turnCredentials.js'
+import {
+  listNotifications,
+  countUnreadNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  registerDeviceToken,
+  unregisterDeviceToken,
+} from './notificationStore.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -357,6 +365,31 @@ async function runMigrations(): Promise<void> {
     },
     { label: 'idx_calls_caller_id', sql: 'CREATE INDEX IF NOT EXISTS idx_calls_caller_id ON calls(caller_id)' },
     { label: 'idx_calls_callee_id', sql: 'CREATE INDEX IF NOT EXISTS idx_calls_callee_id ON calls(callee_id)' },
+    {
+      label: 'notifications table',
+      sql: `CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR NOT NULL,
+        title VARCHAR NOT NULL,
+        body VARCHAR NOT NULL,
+        data JSONB DEFAULT '{}',
+        read_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`,
+    },
+    { label: 'idx_notifications_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)' },
+    {
+      label: 'device_tokens table',
+      sql: `CREATE TABLE IF NOT EXISTS device_tokens (
+        token VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        platform VARCHAR NOT NULL DEFAULT 'android',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`,
+    },
+    { label: 'idx_device_tokens_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id)' },
   ]
 
   for (const step of steps) {
@@ -1404,6 +1437,62 @@ app.get('/api/turn-credentials', requireAuth, (req, res) => {
   }
   const credentials = generateTurnCredentials(req.auth!.userId, config.turnSecret, config.turnHost)
   res.json(credentials)
+})
+
+// ── Notificações (sininho in-app + push) — Módulo 4 ────────
+const registerDeviceTokenSchema = z.object({
+  token: z.string().min(10),
+  platform: z.enum(['android', 'ios', 'web']).default('android'),
+})
+
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : undefined
+    const [notifications, unreadCount] = await Promise.all([
+      listNotifications(req.auth!.userId, limit),
+      countUnreadNotifications(req.auth!.userId),
+    ])
+    res.json({ notifications, unreadCount })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao buscar notificações.' })
+  }
+})
+
+app.post('/api/notifications/:id/read', requireAuth, async (req, res) => {
+  try {
+    await markNotificationRead(String(req.params.id), req.auth!.userId)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao marcar notificação.' })
+  }
+})
+
+app.post('/api/notifications/read-all', requireAuth, async (req, res) => {
+  try {
+    await markAllNotificationsRead(req.auth!.userId)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao marcar notificações.' })
+  }
+})
+
+app.post('/api/device-tokens', requireAuth, async (req, res) => {
+  try {
+    const { token, platform } = registerDeviceTokenSchema.parse(req.body)
+    await registerDeviceToken(req.auth!.userId, token, platform)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao registrar dispositivo.' })
+  }
+})
+
+app.delete('/api/device-tokens/:token', requireAuth, async (req, res) => {
+  try {
+    await unregisterDeviceToken(String(req.params.token))
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao remover dispositivo.' })
+  }
 })
 
 // ── Auth: forgot / reset password ─────────────────────────
