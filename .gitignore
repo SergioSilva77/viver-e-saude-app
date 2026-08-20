@@ -6,6 +6,7 @@ dist/
 *.log
 .ai-config.json
 .stripe-config.json
+.firebase-service-account.json
 backups/
 .DS_Store
 Thumbs.db
