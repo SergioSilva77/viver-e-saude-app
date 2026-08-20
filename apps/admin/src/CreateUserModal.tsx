@@ -78,6 +78,7 @@ export function CreateUserModal({ onClose, onSave }: Props) {
       grantedByAdmin: planIds.length > 0,
       resources: ALL_RESOURCES.map((r) => ({ ...r, override: 'herdado' as const })),
       payments: [],
+      role: 'user',
     }
 
     const result = await syncUserToApi({

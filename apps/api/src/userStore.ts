@@ -2,6 +2,8 @@ import { query } from './db.js'
 
 // ── Types ──────────────────────────────────────────────────
 
+export type UserRole = 'user' | 'consultant'
+
 export interface StoredUser {
   id: string
   fullName: string
@@ -14,6 +16,8 @@ export interface StoredUser {
   planExpiresAt?: Record<string, string>
   subscriptionIds?: Record<string, string>
   planCancelledAt?: Record<string, string>
+  role: UserRole
+  tokenVersion: number
 }
 
 interface UserRow {
@@ -28,6 +32,8 @@ interface UserRow {
   plan_expires_at: Record<string, string>
   subscription_ids: Record<string, string>
   plan_cancelled_at: Record<string, string>
+  role?: UserRole
+  token_version?: number
 }
 
 function rowToUser(row: UserRow): StoredUser {
@@ -43,6 +49,8 @@ function rowToUser(row: UserRow): StoredUser {
     planExpiresAt: row.plan_expires_at ?? {},
     subscriptionIds: row.subscription_ids ?? {},
     planCancelledAt: row.plan_cancelled_at ?? {},
+    role: row.role ?? 'user',
+    tokenVersion: row.token_version ?? 0,
   }
 }
 
@@ -64,6 +72,8 @@ export async function upsertUser(
     photoUrl: data.photoUrl ?? existing?.photoUrl,
     healthProfile: data.healthProfile ?? existing?.healthProfile ?? {},
     personSummary: data.personSummary ?? existing?.personSummary ?? '',
+    role: data.role ?? existing?.role ?? 'user',
+    tokenVersion: data.tokenVersion ?? existing?.tokenVersion ?? 0,
     ...existing,
     id: data.id,
     email: data.email,
@@ -82,11 +92,13 @@ export async function upsertUser(
     ...(data.planCancelledAt !== undefined
       ? { planCancelledAt: { ...(existing?.planCancelledAt ?? {}), ...data.planCancelledAt } }
       : {}),
+    ...(data.role !== undefined ? { role: data.role } : {}),
+    ...(data.tokenVersion !== undefined ? { tokenVersion: data.tokenVersion } : {}),
   }
 
   await query(
-    `INSERT INTO users (id, full_name, email, password, photo_url, health_profile, person_summary, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO users (id, full_name, email, password, photo_url, health_profile, person_summary, plan_ids, plan_expires_at, subscription_ids, plan_cancelled_at, role, token_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (id) DO UPDATE SET
        full_name = EXCLUDED.full_name,
        email = EXCLUDED.email,
@@ -97,7 +109,9 @@ export async function upsertUser(
        plan_ids = EXCLUDED.plan_ids,
        plan_expires_at = EXCLUDED.plan_expires_at,
        subscription_ids = EXCLUDED.subscription_ids,
-       plan_cancelled_at = EXCLUDED.plan_cancelled_at`,
+       plan_cancelled_at = EXCLUDED.plan_cancelled_at,
+       role = EXCLUDED.role,
+       token_version = EXCLUDED.token_version`,
     [
       merged.id,
       merged.fullName,
@@ -110,6 +124,8 @@ export async function upsertUser(
       JSON.stringify(merged.planExpiresAt),
       JSON.stringify(merged.subscriptionIds),
       JSON.stringify(merged.planCancelledAt),
+      merged.role,
+      merged.tokenVersion,
     ],
   )
 
@@ -139,4 +155,17 @@ export async function updateHealthProfile(id: string, patch: Record<string, unkn
 
 export async function updatePersonSummary(id: string, summary: string): Promise<void> {
   await query('UPDATE users SET person_summary = $1 WHERE id = $2', [summary, id])
+}
+
+/**
+ * Incrementa token_version do usuário, invalidando todos os JWTs emitidos
+ * anteriormente (ex: após reset de senha). Rotas antigas não são afetadas —
+ * apenas as novas rotas protegidas por requireAuth verificam esse valor.
+ */
+export async function bumpTokenVersion(id: string): Promise<number> {
+  const { rows } = await query<{ token_version: number }>(
+    'UPDATE users SET token_version = token_version + 1 WHERE id = $1 RETURNING token_version',
+    [id],
+  )
+  return rows[0]?.token_version ?? 0
 }

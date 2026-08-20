@@ -49,6 +49,11 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
   const [reason, setReason] = useState('')
   const [resources, setResources] = useState<ResourceToggle[]>(user.resources)
   const [uploading, setUploading] = useState(false)
+  const [role, setRole] = useState<'user' | 'consultant'>(user.role)
+  const [specialty, setSpecialty] = useState(user.consultantSpecialty ?? '')
+  const [bio, setBio] = useState(user.consultantBio ?? '')
+  const [savingRole, setSavingRole] = useState(false)
+  const [roleError, setRoleError] = useState('')
 
   function togglePlan(planId: PlanId) {
     setGrantPlans((prev) =>
@@ -117,6 +122,28 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
 
   function applyResourceChanges() {
     onUpdate({ ...user, resources })
+  }
+
+  async function applyRoleChange() {
+    setSavingRole(true)
+    setRoleError('')
+    try {
+      const res = await adminFetch(`/api/admin/users/${user.id}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, specialty, bio }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setRoleError(data.message ?? 'Falha ao atualizar papel do usuário.')
+        return
+      }
+      onUpdate({ ...user, role, consultantSpecialty: specialty, consultantBio: bio })
+    } catch {
+      setRoleError('API indisponível. Tente novamente.')
+    } finally {
+      setSavingRole(false)
+    }
   }
 
   const effectivePlanId = getEffectivePlanId(user.planIds)
@@ -195,6 +222,56 @@ export function UserDrawer({ user, onClose, onUpdate }: Props) {
                 </div>
               )}
             </div>
+          </div>
+
+                    {/* Papel do usuário (consultor) */}
+          <div className="drawer-section">
+            <div className="drawer-section-title">Papel do usuário</div>
+            <p className="drawer-section-sub">
+              Consultores aparecem no módulo de comunicação (chat/chamadas) com status online/offline.
+            </p>
+            <div className="grant-fields">
+              <label className="field-label">
+                Papel
+                <select
+                  className="field-input"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as 'user' | 'consultant')}
+                >
+                  <option value="user">Usuário comum</option>
+                  <option value="consultant">Consultor</option>
+                </select>
+              </label>
+              {role === 'consultant' && (
+                <>
+                  <label className="field-label">
+                    Especialidade
+                    <input
+                      type="text"
+                      className="field-input"
+                      placeholder="ex: Nutrição, Psicologia..."
+                      value={specialty}
+                      onChange={(e) => setSpecialty(e.target.value)}
+                    />
+                  </label>
+                  <label className="field-label">
+                    Bio
+                    <input
+                      type="text"
+                      className="field-input"
+                      placeholder="Breve descrição do consultor"
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            {roleError && <p className="text-muted" style={{ color: '#c0392b' }}>{roleError}</p>}
+            <button type="button" className="btn-primary" onClick={applyRoleChange} disabled={savingRole}>
+              <i className="bi bi-person-badge"></i>
+              {savingRole ? 'Salvando...' : 'Salvar papel'}
+            </button>
           </div>
 
           {/* Recursos */}

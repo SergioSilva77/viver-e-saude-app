@@ -68,7 +68,21 @@ export const config = {
   adminEmail: process.env.ADMIN_EMAIL ?? '',
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/viversaude',
+  // Usado para assinar/verificar tokens JWT de usuário (chat, chamadas, agendamento).
+  // Em produção DEVE vir de env var — o fallback abaixo é só para dev local e
+  // gera um aviso no boot para não passar despercebido.
+  jwtSecret: process.env.JWT_SECRET ?? '',
 }
+
+if (!config.jwtSecret) {
+  console.warn(
+    '[Config] JWT_SECRET não definido — usando chave de desenvolvimento insegura. ' +
+      'Defina JWT_SECRET no .env antes de ir para produção.',
+  )
+}
+
+/** Chave efetiva usada para assinar tokens (nunca vazia, mas insegura sem env var). */
+export const effectiveJwtSecret = config.jwtSecret || 'dev-insecure-secret-do-not-use-in-production'
 
 // ── Email (SMTP) config ────────────────────────────────────
 // Priority: env vars → .smtp-config.json → null

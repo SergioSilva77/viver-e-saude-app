@@ -24,6 +24,9 @@ interface ApiUser {
   planExpiresAt?: Record<string, string>
   subscriptionIds?: Record<string, string>
   planCancelledAt?: Record<string, string>
+  role?: 'user' | 'consultant'
+  consultantSpecialty?: string
+  consultantBio?: string
 }
 
 /** Map a backend StoredUser (from /api/admin/users) into the AdminUser shape used by the UI. */
@@ -58,6 +61,9 @@ function apiUserToAdminUser(u: ApiUser): AdminUser {
     grantedByAdmin,
     resources: ALL_RESOURCES.map((r) => ({ ...r, override: 'herdado' as const })),
     payments: [],
+    role: u.role ?? 'user',
+    consultantSpecialty: u.consultantSpecialty ?? '',
+    consultantBio: u.consultantBio ?? '',
   }
 }
 

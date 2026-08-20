@@ -36,6 +36,10 @@ export interface AdminUser {
   grantedByAdmin: boolean
   resources: ResourceToggle[]
   payments: PaymentRecord[]
+  /** Papel do usuário — 'consultant' habilita o módulo de comunicação (chat/chamadas). */
+  role: 'user' | 'consultant'
+  consultantSpecialty?: string
+  consultantBio?: string
 }
 
 export const ALL_RESOURCES: Omit<ResourceToggle, 'override'>[] = [

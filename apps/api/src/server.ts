@@ -21,9 +21,13 @@ import { getPlan } from '@viver-saude/shared'
 import { config, getStripeConfig, hasStripeConfig, getAiConfig, type StripeFileConfig, type SmtpFileConfig } from './config.js'
 import { chat, type ChatMessage, type UserProfile } from './ai.js'
 import { recordUsage, getUsageStats, setQuota } from './tokenTracker.js'
-import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary } from './userStore.js'
+import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary, bumpTokenVersion, type UserRole } from './userStore.js'
 import { createResetToken, consumeResetToken } from './resetTokenStore.js'
 import { sendPasswordResetLink } from './emailService.js'
+import { signUserToken, requireAuth } from './auth.js'
+import { setUserRole, listConsultants, getConsultantProfile, getAllConsultantProfilesMap } from './consultantStore.js'
+import { createServer } from 'node:http'
+import { attachWebSocketServer } from './realtime/wsServer.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -168,6 +172,12 @@ const createUserSchema = z.object({
   password: z.string().optional(),
 })
 
+const setUserRoleSchema = z.object({
+  role: z.enum(['user', 'consultant']),
+  specialty: z.string().max(200).optional(),
+  bio: z.string().max(2000).optional(),
+})
+
 const knowledgeMetaSchema = z.object({
   title: z.string().min(1).max(100),
   description: z.string().max(300).default(''),
@@ -276,6 +286,22 @@ import('./db.js').then(({ query: dbQuery }) => {
   dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS person_summary TEXT DEFAULT ''")
     .then(() => console.log('[DB] person_summary column ensured'))
     .catch(() => { /* column already exists or DB not ready */ })
+  dbQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'user'")
+    .then(() => console.log('[DB] role column ensured'))
+    .catch(() => { /* column already exists or DB not ready */ })
+  dbQuery('ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0')
+    .then(() => console.log('[DB] token_version column ensured'))
+    .catch(() => { /* column already exists or DB not ready */ })
+  dbQuery(`CREATE TABLE IF NOT EXISTS consultant_profiles (
+      user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      specialty VARCHAR DEFAULT '',
+      bio TEXT DEFAULT '',
+      status VARCHAR NOT NULL DEFAULT 'offline' CHECK (status IN ('offline', 'online', 'in_call')),
+      max_concurrent_users INT NOT NULL DEFAULT 1,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )`)
+    .then(() => console.log('[DB] consultant_profiles table ensured'))
+    .catch(() => { /* table already exists or DB not ready */ })
 })
 
 // Webhook route must be before express.json()
@@ -1167,6 +1193,8 @@ app.post('/api/auth/login', async (req, res) => {
       return
     }
 
+    const token = signUserToken({ sub: user.id, role: user.role, tokenVersion: user.tokenVersion })
+
     res.json({
       ok: true,
       userId: user.id,
@@ -1175,9 +1203,40 @@ app.post('/api/auth/login', async (req, res) => {
       photoUrl: user.photoUrl ?? '',
       planIds: user.planIds,
       planExpiresAt: user.planExpiresAt ?? {},
+      role: user.role,
+      token,
     })
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : 'Credenciais inválidas.' })
+  }
+})
+
+// Retorna os dados do usuário autenticado a partir do token JWT — usado para
+// validar que o token funciona ponta a ponta antes de proteger rotas maiores.
+// OBS: não usa o path '/api/auth/me' de propósito — esse path já é referenciado
+// (com contrato diferente, baseado em query ?userId=) pelo app Flutter existente,
+// embora hoje não exista rota correspondente (chamada sempre falha e é ignorada
+// silenciosamente em app_state.dart). Evitamos reusar o mesmo path para não
+// confundir os dois contratos.
+app.get('/api/auth/session', requireAuth, async (req, res) => {
+  try {
+    const user = await findById(req.auth!.userId)
+    if (!user) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    const consultantProfile = user.role === 'consultant' ? await getConsultantProfile(user.id) : null
+    res.json({
+      userId: user.id,
+      email: user.email,
+      fullName: user.fullName ?? '',
+      photoUrl: user.photoUrl ?? '',
+      planIds: user.planIds,
+      role: user.role,
+      consultantProfile,
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar usuário.' })
   }
 })
 
@@ -1225,6 +1284,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     }
 
     await upsertUser({ id: user.id, email: user.email, password })
+    await bumpTokenVersion(user.id)
     res.json({ ok: true, message: 'Senha redefinida com sucesso. Faça login para continuar.' })
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao redefinir senha.' })
@@ -1235,7 +1295,14 @@ app.post('/api/auth/reset-password', async (req, res) => {
 app.get('/api/admin/users', requireAdminToken, async (_req, res) => {
   try {
     const users = (await listUsers()).map(({ password: _pw, ...rest }) => rest)
-    res.json({ users })
+    const profiles = await getAllConsultantProfilesMap()
+    const enriched = users.map((u) => ({
+      ...u,
+      consultantSpecialty: profiles[u.id]?.specialty ?? '',
+      consultantBio: profiles[u.id]?.bio ?? '',
+      consultantStatus: profiles[u.id]?.status ?? 'offline',
+    }))
+    res.json({ users: enriched })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar usuários.' })
   }
@@ -1266,6 +1333,35 @@ app.delete('/api/admin/users/:id', requireAdminToken, async (req, res) => {
     res.json({ ok: true })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao remover usuário.' })
+  }
+})
+
+// ── Admin: papel de usuário (consultor) ────────────────────
+app.put('/api/admin/users/:id/role', requireAdminToken, async (req, res) => {
+  try {
+    const userId = String(req.params.id)
+    const payload = setUserRoleSchema.parse(req.body)
+    const user = await findById(userId)
+    if (!user) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+    await setUserRole(userId, payload.role as UserRole, { specialty: payload.specialty, bio: payload.bio })
+    // Invalida tokens antigos desse usuário — o papel mudou, então o app precisa logar de novo
+    // para receber um token com o role atualizado.
+    await bumpTokenVersion(userId)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao atualizar papel do usuário.' })
+  }
+})
+
+app.get('/api/admin/consultants', requireAdminToken, async (_req, res) => {
+  try {
+    const consultants = await listConsultants()
+    res.json({ consultants })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar consultores.' })
   }
 })
 
@@ -1388,6 +1484,7 @@ app.post('/reset-password', async (req, res) => {
     }
 
     await upsertUser({ id: user.id, email: user.email, password })
+    await bumpTokenVersion(user.id)
     res.send(renderResetMessage('Senha redefinida!', 'Sua senha foi alterada com sucesso.', true))
   } catch {
     res.status(500).send(renderResetMessage('Erro', 'Erro ao redefinir senha. Tente novamente.', false))
@@ -1514,6 +1611,9 @@ app.post('/api/user/:id/avatar', (req, res) => {
   })
 })
 
-app.listen(config.port, () => {
+const httpServer = createServer(app)
+attachWebSocketServer(httpServer)
+
+httpServer.listen(config.port, () => {
   console.log(`Viver & Saúde API pronta em http://localhost:${config.port}`)
 })

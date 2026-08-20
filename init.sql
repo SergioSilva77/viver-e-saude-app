@@ -9,7 +9,18 @@ CREATE TABLE IF NOT EXISTS users (
   subscription_ids JSONB DEFAULT '{}',
   plan_cancelled_at JSONB DEFAULT '{}',
   health_profile JSONB DEFAULT '{}',
-  person_summary TEXT DEFAULT ''
+  person_summary TEXT DEFAULT '',
+  role VARCHAR NOT NULL DEFAULT 'user',
+  token_version INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS consultant_profiles (
+  user_id VARCHAR PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  specialty VARCHAR DEFAULT '',
+  bio TEXT DEFAULT '',
+  status VARCHAR NOT NULL DEFAULT 'offline' CHECK (status IN ('offline', 'online', 'in_call')),
+  max_concurrent_users INT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS community_links (
