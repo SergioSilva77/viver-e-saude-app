@@ -16,6 +16,7 @@ export function CallOverlay() {
   const manager = useCallManager()
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteAudioRef = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
     if (localVideoRef.current) localVideoRef.current.srcObject = manager.localStream
@@ -24,6 +25,16 @@ export function CallOverlay() {
   useEffect(() => {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = manager.remoteStream
   }, [manager.remoteStream])
+
+  // O <audio> remoto só é renderizado quando a fase vira 'active' (e não é
+  // vídeo). Como remoteStream pode já existir nesse ponto, precisamos
+  // setar srcObject assim que o elemento monta — um efeito separado que
+  // reage à fase garante isso.
+  useEffect(() => {
+    if (remoteAudioRef.current && manager.remoteStream) {
+      remoteAudioRef.current.srcObject = manager.remoteStream
+    }
+  }, [manager.phase, manager.remoteStream])
 
   if (manager.phase === 'idle') return null
 
@@ -53,6 +64,12 @@ export function CallOverlay() {
         color: '#fff',
       }}
     >
+      {/* Áudio remoto: toca o stream do outro lado em chamadas de voz.
+          Em videochamadas, o <video> remoteVideoRef já cuida do áudio. */}
+      {manager.phase === 'active' && !isActiveVideo && (
+        <audio ref={remoteAudioRef} autoPlay playsInline />
+      )}
+
       {isActiveVideo && (
         <video
           ref={remoteVideoRef}
