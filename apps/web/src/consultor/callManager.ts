@@ -1,4 +1,4 @@
-import { realtimeService } from '../realtime/realtimeService'
+﻿import { realtimeService } from '../realtime/realtimeService'
 
 export type CallPhase = 'idle' | 'outgoingRinging' | 'incomingRinging' | 'connecting' | 'active'
 
@@ -34,6 +34,7 @@ class CallManagerImpl {
 
   private pc: RTCPeerConnection | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
+  private mediaSetupPromise: Promise<void> | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private answeredAt: number | null = null
   private listeners = new Set<Listener>()
@@ -67,6 +68,12 @@ class CallManagerImpl {
     this.phase = 'outgoingRinging'
     this.errorMessage = null
     this.emit()
+
+    // Se for chamada de vídeo, abre preview local já no início
+    if (callType === 'video') {
+      this.setupLocalMedia(true).catch(() => {})
+    }
+
     realtimeService.send({ type: 'call:invite', calleeId: peerId, callType })
   }
 
@@ -75,10 +82,11 @@ class CallManagerImpl {
     if (!s || this.phase !== 'incomingRinging') return
     this.phase = 'connecting'
     this.emit()
-    realtimeService.send({ type: 'call:accept', callId: s.callId })
     try {
-      await this.setupLocalMedia(s.callType === 'video')
-      await this.createPeerConnection()
+      // 1. Inicializa mídia e RTCPeerConnection ANTES de sinalizar o aceite
+      await this.ensureLocalMediaAndPeerConnection()
+      // 2. Só agora sinaliza o aceite
+      realtimeService.send({ type: 'call:accept', callId: s.callId })
     } catch {
       this.errorMessage = 'Não foi possível acessar câmera/microfone.'
       this.rejectCall()
@@ -148,8 +156,7 @@ class CallManagerImpl {
           this.phase = 'connecting'
           this.emit()
           try {
-            await this.setupLocalMedia(this.session?.callType === 'video')
-            await this.createPeerConnection()
+            await this.ensureLocalMediaAndPeerConnection()
             await this.makeOffer()
           } catch {
             this.errorMessage = 'Não foi possível acessar câmera/microfone.'
@@ -207,13 +214,36 @@ class CallManagerImpl {
   // ── WebRTC ──────────────────────────────────────────────
 
   private async setupLocalMedia(video: boolean): Promise<void> {
+    if (this.localStream) {
+      const hasVideo = this.localStream.getVideoTracks().length > 0
+      if (hasVideo === video) return
+      this.localStream.getTracks().forEach((t) => t.stop())
+      this.localStream = null
+    }
+
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: video ? { facingMode: 'user' } : false,
+      video: video ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
     })
     this.micEnabled = true
     this.cameraEnabled = video
     this.emit()
+  }
+
+  private async ensureLocalMediaAndPeerConnection(): Promise<void> {
+    if (this.pc) return
+    if (this.mediaSetupPromise) return this.mediaSetupPromise
+
+    this.mediaSetupPromise = (async () => {
+      try {
+        await this.setupLocalMedia(this.session?.callType === 'video')
+        await this.createPeerConnection()
+      } finally {
+        this.mediaSetupPromise = null
+      }
+    })()
+
+    return this.mediaSetupPromise
   }
 
   private async iceServers(): Promise<RTCConfiguration> {
@@ -230,7 +260,9 @@ class CallManagerImpl {
         ],
       }
     } catch {
-      return { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] }
+      return {
+        iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+      }
     }
   }
 
@@ -257,15 +289,23 @@ class CallManagerImpl {
     }
 
     pc.ontrack = (event) => {
-      this.remoteStream = event.streams[0] ?? null
+      console.log('[WebRTC ontrack]', event.track.kind, event.track.id)
+      let stream = this.remoteStream
+      if (!stream) {
+        stream = event.streams[0] ? event.streams[0] : new MediaStream()
+      }
+      if (!stream.getTracks().some((t) => t.id === event.track.id)) {
+        stream.addTrack(event.track)
+      }
+      // Cria nova instância de MediaStream para garantir que a referência seja reavaliada no React
+      this.remoteStream = new MediaStream(stream.getTracks())
       this.emit()
     }
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') this.onConnected()
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        // Deixa o encerramento explícito (call:end) cuidar da limpeza —
-        // evita fechar a UI só por uma reconexão ICE momentânea.
+        // Deixa o encerramento explícito (call:end) cuidar da limpeza
       }
     }
   }
@@ -287,20 +327,25 @@ class CallManagerImpl {
   private async makeOffer(): Promise<void> {
     const pc = this.pc
     if (!pc || !this.session?.callId) return
-    const offer = await pc.createOffer()
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: this.session?.callType === 'video',
+    })
     await pc.setLocalDescription(offer)
     realtimeService.send({ type: 'webrtc:offer', callId: this.session.callId, sdp: offer })
   }
 
   private async onRemoteOffer(sdp: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.pc) {
-      await this.setupLocalMedia(this.session?.callType === 'video')
-      await this.createPeerConnection()
-    }
-    const pc = this.pc!
+    await this.ensureLocalMediaAndPeerConnection()
+    const pc = this.pc
+    if (!pc) return
+
     await pc.setRemoteDescription(new RTCSessionDescription(sdp))
     await this.flushPendingCandidates()
-    const answer = await pc.createAnswer()
+    const answer = await pc.createAnswer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: this.session?.callType === 'video',
+    })
     await pc.setLocalDescription(answer)
     realtimeService.send({ type: 'webrtc:answer', callId: this.session?.callId, sdp: answer })
   }
