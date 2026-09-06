@@ -516,7 +516,32 @@ function App() {
 
   // Reload health profile when the logged-in user changes
   useEffect(() => {
-    setHealthProfile(loadHealthProfile(sessionUserId))
+    const local = loadHealthProfile(sessionUserId)
+    setHealthProfile(local)
+    if (sessionUserId) {
+      fetch(`/api/user/me?userId=${sessionUserId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && data.healthProfile && typeof data.healthProfile === 'object') {
+            const hp = data.healthProfile
+            if (Object.keys(hp).length > 0) {
+              const merged = {
+                name: hp.name ?? local.name ?? '',
+                gender: ((hp.gender ?? hp.sex ?? local.gender ?? '')).toLowerCase(),
+                age: typeof hp.age === 'number' ? hp.age : (local.age || ''),
+                weightKg: typeof hp.weightKg === 'number' ? hp.weightKg : (local.weightKg || ''),
+                heightCm: typeof hp.heightCm === 'number' ? hp.heightCm : (local.heightCm || ''),
+                bloodType: hp.bloodType ?? local.bloodType ?? '',
+                goals: Array.isArray(hp.goals) ? hp.goals : local.goals,
+                familyHistory: Array.isArray(hp.familyHistory) ? hp.familyHistory : local.familyHistory,
+              }
+              setHealthProfile(merged)
+              saveHealthProfile(merged, sessionUserId)
+            }
+          }
+        })
+        .catch(() => {})
+    }
   }, [sessionUserId])
 
   // Auto-show tutorial on first login
@@ -1360,6 +1385,13 @@ function App() {
           onSave={(updated) => {
             setHealthProfile(updated)
             saveHealthProfile(updated, sessionUserId)
+            if (sessionUserId) {
+              fetch(`/api/user/${sessionUserId}/health-profile`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updated),
+              }).catch(() => {})
+            }
             setShowHealthEditor(false)
           }}
           onClose={() => setShowHealthEditor(false)}

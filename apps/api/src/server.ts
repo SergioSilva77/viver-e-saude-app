@@ -1348,6 +1348,7 @@ app.post('/api/auth/login', async (req, res) => {
       photoUrl: user.photoUrl ?? '',
       planIds: user.planIds,
       planExpiresAt: user.planExpiresAt ?? {},
+      healthProfile: user.healthProfile ?? {},
       role: user.role,
       token,
     })
@@ -1377,6 +1378,7 @@ app.get('/api/auth/session', requireAuth, async (req, res) => {
       fullName: user.fullName ?? '',
       photoUrl: user.photoUrl ?? '',
       planIds: user.planIds,
+      healthProfile: user.healthProfile ?? {},
       role: user.role,
       consultantProfile,
     })
@@ -2020,7 +2022,7 @@ app.post('/reset-password', async (req, res) => {
 app.use('/uploads', express.static(join(process.cwd(), 'uploads')))
 
 // ── User profile (used by Flutter app) ─────────────────────
-app.get('/api/user/me', async (req, res) => {
+app.get(['/api/user/me', '/api/auth/me'], async (req, res) => {
   try {
     const userId = String(req.query.userId ?? '')
     if (!userId) {
@@ -2051,9 +2053,9 @@ app.get('/api/user/me', async (req, res) => {
   }
 })
 
-app.put('/api/user/profile', async (req, res) => {
+app.put(['/api/user/profile', '/api/auth/profile'], async (req, res) => {
   try {
-    const { userId, fullName, healthProfile } = req.body ?? {} as Record<string, unknown>
+    const { userId, fullName, healthProfile, profile } = req.body ?? {} as Record<string, unknown>
     if (!userId) {
       res.status(400).json({ message: 'userId obrigatório.' })
       return
@@ -2065,10 +2067,16 @@ app.put('/api/user/profile', async (req, res) => {
       return
     }
     const row = rows[0]
-    await dbQuery(
-      `UPDATE users SET full_name = $1 WHERE id = $2`,
-      [fullName ?? row.full_name, String(userId)],
-    )
+    if (fullName !== undefined) {
+      await dbQuery(
+        `UPDATE users SET full_name = $1 WHERE id = $2`,
+        [fullName ?? row.full_name, String(userId)],
+      )
+    }
+    const hpPatch = (healthProfile ?? profile) as Record<string, unknown> | undefined
+    if (hpPatch && typeof hpPatch === "object") {
+      await updateHealthProfile(String(userId), hpPatch)
+    }
     res.json({ ok: true, message: 'Perfil atualizado.' })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar perfil.' })
