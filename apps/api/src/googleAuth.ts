@@ -37,6 +37,54 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleIdenti
   return fromPayload(payload)
 }
 
+export async function verifyGoogleAccessToken(accessToken: string): Promise<GoogleIdentity> {
+  const tokenInfoUrl = new URL('https://oauth2.googleapis.com/tokeninfo')
+  tokenInfoUrl.searchParams.set('access_token', accessToken)
+  const tokenInfoRes = await fetch(tokenInfoUrl)
+  if (!tokenInfoRes.ok) {
+    throw new Error('Token do Google inválido.')
+  }
+  const tokenInfo = await tokenInfoRes.json() as {
+    aud?: string
+    azp?: string
+    audience?: string
+    issued_to?: string
+    email?: string
+    email_verified?: boolean | string
+    sub?: string
+  }
+  const allowed = audienceList()
+  const audience = tokenInfo.aud || tokenInfo.azp || tokenInfo.audience || tokenInfo.issued_to
+  if (!audience || !allowed.includes(audience)) {
+    throw new Error('Token do Google inválido.')
+  }
+
+  const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!userInfoRes.ok) {
+    throw new Error('Token do Google inválido.')
+  }
+  const userInfo = await userInfoRes.json() as {
+    email?: string
+    email_verified?: boolean | string
+    name?: string
+    picture?: string
+    sub?: string
+  }
+  const email = (userInfo.email || tokenInfo.email || '').trim().toLowerCase()
+  const verified = userInfo.email_verified ?? tokenInfo.email_verified
+  if (!email || verified === false || verified === 'false') {
+    throw new Error('A conta Google não possui um e-mail verificado.')
+  }
+  return {
+    email,
+    fullName: (userInfo.name ?? email.split('@')[0] ?? 'Usuário').trim().slice(0, 100) || 'Usuário',
+    photoUrl: userInfo.picture ?? '',
+    googleId: userInfo.sub || tokenInfo.sub || email,
+  }
+}
+
 function fromPayload(payload: TokenPayload): GoogleIdentity {
   const email = payload.email?.trim().toLowerCase()
   if (!email || payload.email_verified === false) {

@@ -75,12 +75,12 @@ export async function devAuthenticate(email: string, password: string): Promise<
   }
 }
 
-export async function authenticateWithGoogle(idToken: string): Promise<DevAuthResult> {
+export async function authenticateWithGoogle(payload: { idToken?: string; accessToken?: string }): Promise<DevAuthResult> {
   try {
     const res = await fetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json() as {
       ok?: boolean

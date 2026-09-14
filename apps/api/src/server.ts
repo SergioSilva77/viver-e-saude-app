@@ -71,7 +71,7 @@ import {
   deleteChat as dbDeleteChat,
   addMessage,
 } from './chatStore.js'
-import { verifyGoogleIdToken } from './googleAuth.js'
+import { verifyGoogleAccessToken, verifyGoogleIdToken } from './googleAuth.js'
 import {
   loadWeeklyMeet,
   saveWeeklyMeet,
@@ -125,6 +125,7 @@ const registerFreeSchema = z.object({
 
 const googleAuthSchema = z.object({
   idToken: z.string().min(20).optional(),
+  accessToken: z.string().min(20).optional(),
   email: z.string().email().optional(),
   fullName: z.string().min(1).max(100).optional(),
   googleId: z.string().min(1).optional(),
@@ -508,7 +509,10 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 app.use(cors({ origin: [config.appUrl, config.adminUrl] }))
-app.use(helmet())
+app.use(helmet({
+  // Permite o popup do Google devolver o token à página de login.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+}))
 app.use(morgan('dev'))
 
 // ── Health ─────────────────────────────────────────────────
@@ -1571,7 +1575,12 @@ app.post('/api/auth/google', async (req, res) => {
     let fullName = body.fullName?.trim()
     let photoUrl = body.photoUrl || ''
 
-    if (body.idToken) {
+    if (body.accessToken) {
+      const identity = await verifyGoogleAccessToken(body.accessToken)
+      email = identity.email
+      fullName = identity.fullName
+      photoUrl = identity.photoUrl || photoUrl
+    } else if (body.idToken) {
       const identity = await verifyGoogleIdToken(body.idToken)
       email = identity.email
       fullName = identity.fullName

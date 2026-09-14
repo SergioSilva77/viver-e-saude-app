@@ -16,6 +16,14 @@ declare global {
           prompt: (cb?: (n: { isNotDisplayed?: boolean; isSkippedMoment?: boolean }) => void) => void
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void
         }
+        oauth2: {
+          initTokenClient: (cfg: {
+            client_id: string
+            scope: string
+            callback: (response: { access_token?: string; error?: string }) => void
+            error_callback?: (error: { type?: string; message?: string }) => void
+          }) => { requestAccessToken: (opts?: { prompt?: string }) => void }
+        }
       }
     }
   }
@@ -23,61 +31,81 @@ declare global {
 
 let scriptPromise: Promise<void> | null = null
 
-export function loadGoogleIdentity(): Promise<void> {
-  if (window.google?.accounts?.id) return Promise.resolve()
-  if (scriptPromise) return scriptPromise
-  scriptPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]')
-    if (existing) {
-      if (window.google?.accounts?.id) {
+function waitForOauth2(timeoutMs = 8000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now()
+    const tick = () => {
+      if (window.google?.accounts?.oauth2) {
         resolve()
         return
       }
-      existing.addEventListener('load', () => resolve())
+      if (Date.now() - started > timeoutMs) {
+        reject(new Error('Google Sign-In indisponível neste navegador.'))
+        return
+      }
+      window.setTimeout(tick, 50)
+    }
+    tick()
+  })
+}
+
+export function loadGoogleIdentity(): Promise<void> {
+  if (window.google?.accounts?.oauth2) return Promise.resolve()
+  if (scriptPromise) return scriptPromise
+  scriptPromise = new Promise((resolve, reject) => {
+    const finish = () => {
+      waitForOauth2().then(resolve).catch(reject)
+    }
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]')
+    if (existing) {
+      if (window.google?.accounts?.oauth2) {
+        resolve()
+        return
+      }
+      existing.addEventListener('load', finish)
       existing.addEventListener('error', () => reject(new Error('Falha ao carregar o Google.')))
+      finish()
       return
     }
     const script = document.createElement('script')
     script.src = 'https://accounts.google.com/gsi/client'
     script.async = true
     script.defer = true
-    script.onload = () => resolve()
+    script.onload = finish
     script.onerror = () => reject(new Error('Falha ao carregar o Google.'))
     document.head.appendChild(script)
   })
   return scriptPromise
 }
 
-export function startGoogleSignIn(opts: {
-  onCredential: (idToken: string) => void
-  onNeedButton: () => void
-  buttonHost: HTMLElement | null
-}): void {
-  const gis = window.google?.accounts?.id
-  if (!gis) throw new Error('Google Sign-In indisponível neste navegador.')
-
-  gis.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    ux_mode: 'popup',
-    auto_select: false,
-    callback: (response) => opts.onCredential(response.credential),
-  })
-
-  if (opts.buttonHost) {
-    opts.buttonHost.innerHTML = ''
-    gis.renderButton(opts.buttonHost, {
-      theme: 'outline',
-      size: 'large',
-      text: 'continue_with',
-      shape: 'pill',
-      width: 320,
-      locale: 'pt-BR',
-    })
-  }
-
-  gis.prompt((notification) => {
-    if (notification?.isNotDisplayed || notification?.isSkippedMoment) {
-      opts.onNeedButton()
+/** Popup clássico: escolher conta → devolve access token para o backend. */
+export function signInWithGooglePopup(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const oauth = window.google?.accounts?.oauth2
+    if (!oauth) {
+      reject(new Error('Google Sign-In indisponível neste navegador.'))
+      return
     }
+    const client = oauth.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'openid email profile',
+      callback: (response) => {
+        if (response.error || !response.access_token) {
+          reject(new Error(response.error === 'popup_closed_by_user'
+            ? 'Login com Google cancelado.'
+            : 'Não foi possível concluir o login com o Google.'))
+          return
+        }
+        resolve(response.access_token)
+      },
+      error_callback: (error) => {
+        if (error.type === 'popup_closed' || error.type === 'popup_closed_by_user') {
+          reject(new Error('Login com Google cancelado.'))
+          return
+        }
+        reject(new Error(error.message || 'Não foi possível concluir o login com o Google.'))
+      },
+    })
+    client.requestAccessToken({ prompt: 'select_account' })
   })
 }

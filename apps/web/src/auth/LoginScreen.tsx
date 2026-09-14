@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { plans } from '@viver-saude/shared'
 import { saveSession } from './sessionTypes'
 import { authenticateWithGoogle, devAuthenticate } from './devAuth'
-import { loadGoogleIdentity, startGoogleSignIn } from './googleSignIn'
+import { loadGoogleIdentity, signInWithGooglePopup } from './googleSignIn'
 import { realtimeService } from '../realtime/realtimeService'
 import type { PlanId } from '@viver-saude/shared'
 
@@ -35,8 +35,6 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
   const [loginView, setLoginView] = useState<LoginView>('login')
   const [loginState, setLoginState] = useState<LoginState>('idle')
   const [googleLoading, setGoogleLoading] = useState(false)
-  const [showGoogleButton, setShowGoogleButton] = useState(false)
-  const googleBtnRef = useRef<HTMLDivElement>(null)
   const [email, setEmail] = useState(prefilledEmail ?? '')
   const [password, setPassword] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -145,8 +143,8 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
     onLogin(resolvedPlanIds)
   }
 
-  async function completeGoogleSession(idToken: string) {
-    const result = await authenticateWithGoogle(idToken)
+  async function completeGoogleSession(payload: { idToken?: string; accessToken?: string }) {
+    const result = await authenticateWithGoogle(payload)
     if (!result.ok) {
       setErrorMsg(result.error ?? 'Falha na autenticação com o Google.')
       setLoginState('error')
@@ -165,6 +163,7 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
       role: result.role,
     })
     if (result.token) realtimeService.connect(result.token)
+    setGoogleLoading(false)
     onLogin(resolvedPlanIds)
   }
 
@@ -174,23 +173,18 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
     setGoogleLoading(true)
     try {
       await loadGoogleIdentity()
-      startGoogleSignIn({
-        buttonHost: googleBtnRef.current,
-        onCredential: (idToken) => {
-          void completeGoogleSession(idToken)
-        },
-        onNeedButton: () => {
-          setShowGoogleButton(true)
-          setGoogleLoading(false)
-        },
-      })
-      window.setTimeout(() => setGoogleLoading(false), 12000)
+      const accessToken = await signInWithGooglePopup()
+      await completeGoogleSession({ accessToken })
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Não foi possível conectar com o Google.')
       setLoginState('error')
       setGoogleLoading(false)
     }
   }
+
+  useEffect(() => {
+    void loadGoogleIdentity()
+  }, [])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -387,11 +381,6 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
             </>
           )}
         </button>
-        <div
-          ref={googleBtnRef}
-          id="google-signin-host"
-          className={`google-signin-host ${showGoogleButton ? 'google-signin-host-visible' : ''}`}
-        />
 
         <button
           type="button"
