@@ -79,7 +79,7 @@ export function AppointmentsPanel({ token, role, onClose }: Props) {
   async function startBooking() {
     setView('book-pick')
     try {
-      setConsultants(await fetchConsultants(token))
+      setConsultants(await fetchConsultants(token, true))
     } catch {
       setConsultants([])
     }

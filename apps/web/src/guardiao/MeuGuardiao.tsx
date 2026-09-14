@@ -33,9 +33,18 @@ interface Props {
   userId?: string
   /** Authenticated user email for token usage tracking. */
   userEmail?: string
-  /** Timestamp until guardiao is fully unlocked (null = always show limited UI) */
-  guardiao24hUntil?: number | null
   onViewPlans?: () => void
+}
+
+interface GuardiaoQuota {
+  unlimited: boolean
+  isFreeTier: boolean
+  tierName: string
+  dailyLimit: number
+  usedToday: number
+  remainingToday: number
+  expired: boolean
+  canUpgrade: boolean
 }
 
 // ── Constants ──────────────────────────────────────────────
@@ -127,7 +136,7 @@ function ChatListView({ chats, activeChatId, onSelect, onNew, onDelete }: ChatLi
 
 // ── Main component ─────────────────────────────────────────
 
-export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, onViewPlans }: Props) {
+export function MeuGuardiao({ userProfile, userId, userEmail, onViewPlans }: Props) {
   const [chats, setChats] = useState<StoredChat[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([])
@@ -136,12 +145,30 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
   const [isThinking, setIsThinking] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [quota, setQuota] = useState<GuardiaoQuota | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // The title currently shown in the toolbar
   const [activeTitle, setActiveTitle] = useState('Nova conversa')
+
+  async function refreshQuota() {
+    if (!userId) return
+    try {
+      const res = await fetch(`${API_URL}/api/guardiao/remaining-time?userId=${encodeURIComponent(userId)}`)
+      if (!res.ok) return
+      const data = (await res.json()) as GuardiaoQuota
+      setQuota(data)
+    } catch {
+      // quota is informational — chat still works if this fails
+    }
+  }
+
+  useEffect(() => {
+    void refreshQuota()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   // Load chats from API on mount
   useEffect(() => {
@@ -239,6 +266,10 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
   async function sendMessage() {
     const text = inputText.trim()
     if (!text || isThinking || !activeChatId) return
+    if (quota !== null && !quota.unlimited && quota.remainingToday <= 0) {
+      setChatError(`Limite diário de ${quota.dailyLimit} mensagens atingido (${quota.tierName}).`)
+      return
+    }
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -274,6 +305,7 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
 
       if (!res.ok) {
         setChatError(data.message ?? 'Erro ao obter resposta. Tente novamente.')
+        void refreshQuota()
         return
       }
 
@@ -285,6 +317,7 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
 
       const finalMessages = [...updatedMessages, aiMsg]
       setActiveMessages(finalMessages)
+      void refreshQuota()
 
       // Update chat in the list
       setChats((prev) =>
@@ -321,10 +354,7 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
     }
   }
 
-  const isGuardiao24hActive =
-    guardiao24hUntil !== null &&
-    guardiao24hUntil !== undefined &&
-    guardiao24hUntil > Date.now()
+  const atQuota = quota !== null && !quota.unlimited && quota.remainingToday <= 0
 
   // ── Render: loading ────────────────────────────────────────
 
@@ -379,7 +409,23 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
         </button>
       </div>
 
-      {/* Welcome / intro */}
+      {quota && !quota.unlimited && (
+        <div className={`guardiao-limited-banner ${atQuota ? 'guardiao-quota-exhausted' : ''}`}>
+          <i className={`bi ${atQuota ? 'bi-exclamation-triangle-fill' : 'bi-chat-dots'}`} />
+          <div>
+            <strong>
+              {atQuota
+                ? `Limite diário de ${quota.dailyLimit} mensagens atingido (${quota.tierName})`
+                : `${quota.remainingToday} de ${quota.dailyLimit} mensagens hoje (${quota.tierName})`}
+            </strong>
+          </div>
+          {quota.canUpgrade && onViewPlans && (
+            <button type="button" className="btn-upgrade-mini" onClick={onViewPlans}>
+              Ver planos
+            </button>
+          )}
+        </div>
+      )}
       {activeMessages.length === 0 && (
         <div className="guardiao-intro">
           <div className="guardiao-intro-icon">
@@ -453,18 +499,24 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
           ref={inputRef}
           type="text"
           className="chat-input"
-          placeholder={isThinking ? 'MeuGuardião está pensando...' : 'Digite sua mensagem...'}
+          placeholder={
+            atQuota
+              ? 'Limite diário atingido'
+              : isThinking
+                ? 'MeuGuardião está pensando...'
+                : 'Digite sua mensagem...'
+          }
           value={inputText}
-          disabled={isThinking}
+          disabled={isThinking || atQuota}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
           maxLength={2000}
         />
         <button
           type="button"
-          className={`chat-send-btn ${isThinking || !inputText.trim() ? 'chat-send-btn-disabled' : ''}`}
+          className={`chat-send-btn ${isThinking || atQuota || !inputText.trim() ? 'chat-send-btn-disabled' : ''}`}
           onClick={sendMessage}
-          disabled={isThinking || !inputText.trim()}
+          disabled={isThinking || atQuota || !inputText.trim()}
           aria-label="Enviar"
         >
           {isThinking ? (
@@ -475,11 +527,10 @@ export function MeuGuardiao({ userProfile, userId, userEmail, guardiao24hUntil, 
         </button>
       </div>
 
-      {/* Upsell hint for 24h window users */}
-      {isGuardiao24hActive && onViewPlans && (
+      {atQuota && quota?.canUpgrade && onViewPlans && (
         <div className="guardiao-upsell-hint">
           <i className="bi bi-stars" />
-          Gostou? Assine o Nível 2 para acesso permanente ao MeuGuardião.
+          Assine um plano superior para mais mensagens diárias no MeuGuardião.
           <button type="button" className="btn-upsell-inline" onClick={onViewPlans}>
             Ver planos
           </button>

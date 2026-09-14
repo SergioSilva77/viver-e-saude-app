@@ -677,6 +677,7 @@
 }
 
 .nav-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -706,6 +707,27 @@
   right: 2px;
   font-size: 0.5rem !important;
   color: #8fad9c;
+}
+
+.comic-new-badge {
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  background: #e53935;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  transform: rotate(-8deg);
+  line-height: 1.2;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.chat-toolbar-btn-new {
+  position: relative;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1660,6 +1682,65 @@
 
 .btn-consultor-cta:hover {
   background: #3d6153;
+}
+
+.btn-consultor-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.consultor-card-meet {
+  align-items: flex-start;
+}
+
+.home-plan-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #dbe3da;
+  background: #fff;
+}
+
+.home-plan-badge > i {
+  font-size: 1.4rem;
+  color: #3d6153;
+}
+
+.home-plan-badge div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-plan-badge strong {
+  font-size: 0.95rem;
+  color: #24352e;
+}
+
+.home-plan-badge span {
+  font-size: 0.78rem;
+  color: #6b7c74;
+}
+
+.home-plan-badge-active {
+  background: #3d6153;
+  border-color: #3d6153;
+}
+
+.home-plan-badge-active > i,
+.home-plan-badge-active strong,
+.home-plan-badge-active span {
+  color: #fff;
+}
+
+.home-plan-badge-active span {
+  opacity: 0.9;
+}
+
+.guardiao-quota-exhausted {
+  background: rgba(230, 126, 34, 0.15);
 }
 
 /* ── MeuGuardiao wrapper ─────────────────────────────────── */

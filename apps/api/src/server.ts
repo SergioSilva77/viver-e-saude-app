@@ -21,7 +21,7 @@ import { getPlan } from '@viver-saude/shared'
 import { config, getStripeConfig, hasStripeConfig, getAiConfig, type StripeFileConfig, type SmtpFileConfig } from './config.js'
 import { chat, type ChatMessage, type UserProfile } from './ai.js'
 import { recordUsage, getUsageStats, setQuota } from './tokenTracker.js'
-import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary, bumpTokenVersion, type UserRole } from './userStore.js'
+import { listUsers, upsertUser, removeUser, findByEmail, findById, updateHealthProfile, updatePersonSummary, bumpTokenVersion, findPublicByIds, type UserRole } from './userStore.js'
 import { createResetToken, consumeResetToken } from './resetTokenStore.js'
 import { sendPasswordResetLink } from './emailService.js'
 import { signUserToken, requireAuth, requireRole } from './auth.js'
@@ -36,7 +36,7 @@ import {
   markRead as markConversationRead,
 } from './conversationStore.js'
 import { createServer } from 'node:http'
-import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser } from './realtime/wsServer.js'
+import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser, listOnlineUserIds } from './realtime/wsServer.js'
 import { generateTurnCredentials } from './turnCredentials.js'
 import { getCallLimitInfo } from './callStore.js'
 import {
@@ -565,38 +565,56 @@ app.post('/api/admin/logout', (req, res) => {
 // ── Catalog ────────────────────────────────────────────────
 app.get('/api/catalog/plans', (_req, res) => {
   const allPlans = getCatalog()
-  const activePlans = allPlans
-    .filter((p) => p.id === 'nivel2' || p.id === 'nivel3')
-    .map((p) => {
-      if (p.id === 'nivel2') {
-        return {
-          ...p,
-          label: 'Nível 1 - Assinatura Mensal',
-          benefits: [
-            'MeuGuardião com até 50 mensagens diárias',
-            '70 receitas naturais e e-book',
-            'Bate-papo gratuito toda segunda-feira',
-            'Botão de WhatsApp para consultoria gratuita',
-          ],
-        }
+  const labeled = allPlans.map((p) => {
+    if (p.id === 'nivel1') {
+      return {
+        ...p,
+        label: 'Nível 1 - Assinatura Mensal',
+        priceInCents: 818,
+        formattedPrice: '8,18',
+        billingInterval: 'monthly',
+        description: 'Chat com consultor, MeuGuardião e reunião semanal no Google Meet.',
+        benefits: [
+          'MeuGuardião com até 30 mensagens diárias',
+          'Chat 1:1 com consultor no aplicativo',
+          'Reunião gratuita toda segunda-feira no Google Meet',
+        ],
       }
-      if (p.id === 'nivel3') {
-        return {
-          ...p,
-          label: 'Nível 2 - Experiência Premium',
-          benefits: [
-            'MeuGuardião com até 100 mensagens diárias',
-            'Treinamento gratuito de até 30 minutos',
-            'Todos os benefícios do Nível 1',
-            'Grupos exclusivos no WhatsApp e Telegram',
-            'Atendimento por videoconferência sob agendamento',
-            'Acesso à fábrica com descontos e indicações da plataforma',
-          ],
-        }
+    }
+    if (p.id === 'nivel2') {
+      return {
+        ...p,
+        label: 'Nível 2 - Assinatura Mensal',
+        priceInCents: 1636,
+        formattedPrice: '16,36',
+        billingInterval: 'monthly',
+        description: 'Tudo do Nível 1 e chamada de voz por agendamento.',
+        benefits: [
+          'MeuGuardião com até 70 mensagens diárias',
+          'Tudo do Nível 1',
+          'Chamada de voz por agendamento (até 20 min/mês)',
+        ],
       }
-      return p
-    })
-  res.json({ plans: activePlans })
+    }
+    if (p.id === 'nivel3') {
+      return {
+        ...p,
+        label: 'Nível 3 - Experiência Premium',
+        priceInCents: 3272,
+        formattedPrice: '32,72',
+        billingInterval: 'monthly',
+        description: 'Tudo do Nível 2, vídeo por agendamento e desconto de fábrica.',
+        benefits: [
+          'MeuGuardião com até 100 mensagens diárias',
+          'Tudo do Nível 2',
+          'Chamada de vídeo por agendamento (até 30 min/mês)',
+          'Desconto de fábrica em produtos naturais',
+        ],
+      }
+    }
+    return p
+  })
+  res.json({ plans: labeled })
 })
 
 // ── Onboarding ─────────────────────────────────────────────
@@ -1191,8 +1209,8 @@ app.post('/api/ai/chat', async (req, res) => {
           let limitMsg = `Você atingiu o limite de ${dailyLimit} mensagens diárias do ${tierName}. Seu limite será renovado à meia-noite.`
           if (canUpgrade) {
             limitMsg += tierName === 'Gratuito'
-              ? ' Para ter até 50 ou 100 mensagens diárias, faça upgrade para o Nível 1 ou Nível 2!'
-              : ' Para ter até 100 mensagens diárias, faça upgrade para o Nível 2!'
+              ? ' Para ter mais mensagens, assine o Nível 1.'
+              : ' Faça upgrade para ter mais mensagens diárias.'
           }
           res.status(403).json({
             ok: false,
@@ -1509,10 +1527,13 @@ app.post('/api/auth/google', async (req, res) => {
 function getUserDailyLimit(planIds?: string[]): { dailyLimit: number; tierName: string; canUpgrade: boolean } {
   const ids = planIds ?? []
   if (ids.includes('nivel3')) {
-    return { dailyLimit: 100, tierName: 'Nível 2', canUpgrade: false }
+    return { dailyLimit: 100, tierName: 'Nível 3', canUpgrade: false }
   }
-  if (ids.includes('nivel2') || ids.includes('nivel1')) {
-    return { dailyLimit: 50, tierName: 'Nível 1', canUpgrade: true }
+  if (ids.includes('nivel2')) {
+    return { dailyLimit: 70, tierName: 'Nível 2', canUpgrade: true }
+  }
+  if (ids.includes('nivel1')) {
+    return { dailyLimit: 30, tierName: 'Nível 1', canUpgrade: true }
   }
   return { dailyLimit: 5, tierName: 'Gratuito', canUpgrade: true }
 }
@@ -1831,6 +1852,25 @@ app.put('/api/consultants/me/availability', requireAuth, requireRole('consultant
   }
 })
 
+app.get('/api/consultants/me/available-users', requireAuth, requireRole('consultant'), async (_req, res) => {
+  try {
+    const ids = listOnlineUserIds('user')
+    const users = await findPublicByIds(ids)
+    res.json({
+      users: users
+        .filter((u) => u.role === 'user')
+        .map((u) => ({
+          id: u.id,
+          fullName: u.fullName,
+          photoUrl: u.photoUrl,
+          planIds: u.planIds,
+        })),
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar usuários.' })
+  }
+})
+
 app.get('/api/consultants/me/availability', requireAuth, requireRole('consultant'), async (req, res) => {
   try {
     const rules = await getAvailability(req.auth!.userId)
@@ -2105,9 +2145,22 @@ app.get('/api/admin/consultants', requireAdminToken, async (_req, res) => {
 })
 
 // ── Consultores disponíveis (para o usuário escolher com quem conversar) ──
-app.get('/api/consultants', requireAuth, async (_req, res) => {
+app.get('/api/consultants', requireAuth, async (req, res) => {
   try {
-    const consultants = await listConsultants()
+    if (req.auth?.role === 'user') {
+      const self = await findById(req.auth.userId)
+      if (!self || (self.planIds ?? []).length === 0) {
+        res.status(403).json({ message: 'Assine um plano para falar com consultores no aplicativo.' })
+        return
+      }
+    }
+
+    const availableOnly = req.query.available === '1' || req.query.available === 'true'
+    let consultants = await listConsultants()
+    if (availableOnly) {
+      consultants = consultants.filter((c) => c.profile.status === 'online')
+    }
+
     res.json({
       consultants: consultants.map((c) => ({
         id: c.userId,

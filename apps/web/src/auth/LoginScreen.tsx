@@ -9,8 +9,6 @@ type SubscribeState = 'idle' | 'loading' | 'error'
 type OverlayStep = 'plans' | 'user-info'
 type LoginView = 'login' | 'forgot' | 'forgot-sent'
 
-const GUARDIAO_24H_MS = 24 * 60 * 60 * 1000
-
 // ── Plan display constants ──────────────────────────────────
 const planIcons = ['bi-seedling', 'bi-heart-pulse', 'bi-stars']
 const planIconClass = ['n1', 'n2', 'n3']
@@ -111,14 +109,6 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
     setTimeout(() => setOverlayVisible(false), 380)
   }
 
-  function buildGuardiao24hTimestamp(planIds: PlanId[]): number | null {
-    // Only start the 24h window if the user has nivel1 (and not a higher tier that gives full access)
-    if (planIds.includes('nivel1') && !planIds.includes('nivel2') && !planIds.includes('nivel3')) {
-      return Date.now() + GUARDIAO_24H_MS
-    }
-    return null
-  }
-
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email || !password) {
@@ -144,7 +134,6 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
       photoUrl: result.photoUrl,
       planIds: resolvedPlanIds,
       planExpiresAt: result.planExpiresAt,
-      guardiao24hUnlockedUntil: buildGuardiao24hTimestamp(resolvedPlanIds),
       token: result.token,
       role: result.role,
     })

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { realtimeService } from '../realtime/realtimeService'
 import { callManager } from './callManager'
-import { fetchConsultants, fetchConversations, fetchMessages, createConversation, markConversationRead } from './api'
+import { fetchConsultants, fetchAvailableUsers, fetchConversations, fetchMessages, createConversation, markConversationRead } from './api'
 import { AppointmentsPanel } from '../appointments/AppointmentsPanel'
 import type { Consultant, ConversationMessage, ConversationSummary, MessageDeliveryStatus } from './types'
 
@@ -9,6 +9,15 @@ interface Props {
   token: string
   selfId: string
   role: 'user' | 'consultant'
+  planIds?: string[]
+}
+
+function planRank(ids: string[] | undefined): number {
+  const list = ids ?? []
+  if (list.includes('nivel3')) return 3
+  if (list.includes('nivel2')) return 2
+  if (list.includes('nivel1')) return 1
+  return 0
 }
 
 function timeLabel(iso: string | null): string {
@@ -21,12 +30,14 @@ function timeLabel(iso: string | null): string {
     : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
-export function ConsultorSection({ token, selfId, role }: Props) {
+export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<ConversationSummary | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerKind, setPickerKind] = useState<'consultants' | 'users'>('consultants')
   const [consultants, setConsultants] = useState<Consultant[]>([])
+  const [availableUsers, setAvailableUsers] = useState<Array<{ id: string; fullName: string; photoUrl: string }>>([])
   const [appointmentsOpen, setAppointmentsOpen] = useState(false)
 
   async function loadConversations() {
@@ -62,12 +73,24 @@ export function ConsultorSection({ token, selfId, role }: Props) {
   }, [])
 
   async function openPicker() {
+    setPickerKind('consultants')
     setPickerOpen(true)
     try {
-      const list = await fetchConsultants(token)
+      const list = await fetchConsultants(token, true)
       setConsultants(list)
     } catch {
       setConsultants([])
+    }
+  }
+
+  async function openUserPicker() {
+    setPickerKind('users')
+    setPickerOpen(true)
+    try {
+      const list = await fetchAvailableUsers(token)
+      setAvailableUsers(list)
+    } catch {
+      setAvailableUsers([])
     }
   }
 
@@ -87,6 +110,8 @@ export function ConsultorSection({ token, selfId, role }: Props) {
       <ChatThread
         token={token}
         selfId={selfId}
+        role={role}
+        planIds={planIds}
         conversation={selected}
         onBack={() => { setSelected(null); loadConversations() }}
       />
@@ -100,8 +125,12 @@ export function ConsultorSection({ token, selfId, role }: Props) {
         <button type="button" className="chat-toolbar-btn" onClick={() => setAppointmentsOpen(true)} title={role === 'consultant' ? 'Minha agenda' : 'Minhas consultas'}>
           <i className="bi bi-calendar3" />
         </button>
-        {role === 'user' && (
+        {role === 'user' ? (
           <button type="button" className="chat-toolbar-btn" onClick={openPicker} title="Nova conversa">
+            <i className="bi bi-plus-circle" />
+          </button>
+        ) : (
+          <button type="button" className="chat-toolbar-btn" onClick={openUserPicker} title="Usuários disponíveis">
             <i className="bi bi-plus-circle" />
           </button>
         )}
@@ -153,18 +182,45 @@ export function ConsultorSection({ token, selfId, role }: Props) {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="Escolha um consultor"
+            aria-label={pickerKind === 'users' ? 'Usuários disponíveis' : 'Escolha um consultor'}
             style={{ bottom: 'calc(76px + env(safe-area-inset-bottom))', maxHeight: '78vh', borderRadius: 24 }}
           >
             <div className="plans-overlay-handle" onClick={() => setPickerOpen(false)} />
             <div className="plans-overlay-header">
-              <h2 className="plans-overlay-title">Escolha um consultor</h2>
+              <h2 className="plans-overlay-title">
+                {pickerKind === 'users' ? 'Usuários disponíveis' : 'Escolha um consultor'}
+              </h2>
               <button type="button" className="plans-overlay-close" onClick={() => setPickerOpen(false)} aria-label="Fechar">
                 <i className="bi bi-x-lg" />
               </button>
             </div>
             <div className="plans-overlay-body">
-              {consultants.length === 0 ? (
+              {pickerKind === 'users' ? (
+                availableUsers.length === 0 ? (
+                  <p className="drawer-section-sub">Nenhum usuário disponível no momento.</p>
+                ) : (
+                  <ul className="chat-list">
+                    {availableUsers.map((u) => (
+                      <li key={u.id}>
+                        <button type="button" className="chat-list-item-btn" onClick={() => startConversation(u.id)}>
+                          <div className="consultor-avatar-wrap">
+                            {u.photoUrl ? (
+                              <img src={u.photoUrl} alt={u.fullName} className="consultor-avatar-img" />
+                            ) : (
+                              <div className="consultor-avatar-fallback">{(u.fullName || '?').charAt(0).toUpperCase()}</div>
+                            )}
+                            <span className="consultor-status-dot online" />
+                          </div>
+                          <div className="chat-list-item-info">
+                            <span className="chat-list-item-title">{u.fullName}</span>
+                            <span className="chat-list-item-meta">Disponível</span>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : consultants.length === 0 ? (
                 <p className="drawer-section-sub">Nenhum consultor disponível no momento.</p>
               ) : (
                 <ul className="chat-list">
@@ -215,18 +271,50 @@ function statusIcon(status: MessageDeliveryStatus): string {
 function ChatThread({
   token,
   selfId,
+  role,
+  planIds,
   conversation,
   onBack,
 }: {
   token: string
   selfId: string
+  role: 'user' | 'consultant'
+  planIds: string[]
   conversation: ConversationSummary
   onBack: () => void
 }) {
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
+  const [appointmentsOpen, setAppointmentsOpen] = useState(false)
+  const [callHint, setCallHint] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const rank = planRank(planIds)
+  const canVoice = role === 'consultant' || rank >= 2
+  const canVideo = role === 'consultant' || rank >= 3
+
+  function onCallPressed(callType: 'voice' | 'video') {
+    if (role === 'consultant') {
+      callManager.startCall(conversation.peerId, conversation.peerName, conversation.peerPhotoUrl, callType)
+      return
+    }
+    const allowed = callType === 'video' ? canVideo : canVoice
+    if (!allowed) {
+      const need = callType === 'video' ? 'Nível 3' : 'Nível 2'
+      setCallHint(
+        callType === 'video'
+          ? `Chamada de vídeo está no ${need}. Faça upgrade para agendar.`
+          : `Chamada de voz está no ${need}. Faça upgrade para agendar.`,
+      )
+      return
+    }
+    setCallHint(
+      callType === 'video'
+        ? 'Agende um horário para a videochamada.'
+        : 'Agende um horário para a chamada de voz.',
+    )
+    setAppointmentsOpen(true)
+  }
 
   async function markRead() {
     try {
@@ -316,23 +404,37 @@ function ChatThread({
         </span>
         <button
           type="button"
-          className="chat-toolbar-btn"
-          onClick={() => callManager.startCall(conversation.peerId, conversation.peerName, conversation.peerPhotoUrl, 'voice')}
+          className="chat-toolbar-btn chat-toolbar-btn-new"
+          onClick={() => onCallPressed('voice')}
           aria-label="Chamada de voz"
           title="Chamada de voz"
         >
           <i className="bi bi-telephone" />
+          <span className="comic-new-badge">NEW</span>
         </button>
         <button
           type="button"
-          className="chat-toolbar-btn"
-          onClick={() => callManager.startCall(conversation.peerId, conversation.peerName, conversation.peerPhotoUrl, 'video')}
+          className="chat-toolbar-btn chat-toolbar-btn-new"
+          onClick={() => onCallPressed('video')}
           aria-label="Videochamada"
           title="Videochamada"
         >
           <i className="bi bi-camera-video" />
+          <span className="comic-new-badge">NEW</span>
         </button>
       </div>
+
+      {callHint && (
+        <div className="guardiao-limited-banner" style={{ margin: '0 12px 8px' }}>
+          <i className="bi bi-info-circle" />
+          <div>
+            <span>{callHint}</span>
+          </div>
+          <button type="button" className="btn-upgrade-mini" onClick={() => setCallHint(null)}>
+            Ok
+          </button>
+        </div>
+      )}
 
       <div className="guardiao-messages">
         {loading ? (
@@ -364,6 +466,9 @@ function ChatThread({
           <i className="bi bi-send-fill" />
         </button>
       </div>
+      {appointmentsOpen && (
+        <AppointmentsPanel token={token} role={role} onClose={() => setAppointmentsOpen(false)} />
+      )}
     </div>
   )
 }

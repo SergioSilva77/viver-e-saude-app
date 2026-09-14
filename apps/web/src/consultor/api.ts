@@ -15,9 +15,15 @@ async function unwrap<T>(res: Response, key: string): Promise<T> {
   return (data[key] ?? data) as T
 }
 
-export async function fetchConsultants(token: string): Promise<Consultant[]> {
-  const res = await fetch('/api/consultants', { headers: authHeaders(token) })
+export async function fetchConsultants(token: string, availableOnly = false): Promise<Consultant[]> {
+  const qs = availableOnly ? '?available=1' : ''
+  const res = await fetch(`/api/consultants${qs}`, { headers: authHeaders(token) })
   return unwrap<Consultant[]>(res, 'consultants')
+}
+
+export async function fetchAvailableUsers(token: string): Promise<Array<{ id: string; fullName: string; photoUrl: string }>> {
+  const res = await fetch('/api/consultants/me/available-users', { headers: authHeaders(token) })
+  return unwrap(res, 'users')
 }
 
 export async function fetchConversations(token: string): Promise<ConversationSummary[]> {

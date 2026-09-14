@@ -7,7 +7,8 @@ import { getEffectivePlanId, type PlanId } from '@viver-saude/shared'
 // tabela existe para: (1) auditoria/histórico, (2) permitir ao Módulo 6
 // somar minutos de chamada por usuário/mês (limite do Nível 1).
 
-export const NIVEL1_MONTHLY_LIMIT_SECONDS = 30 * 60
+export const NIVEL2_MONTHLY_LIMIT_SECONDS = 20 * 60
+export const NIVEL3_MONTHLY_LIMIT_SECONDS = 30 * 60
 export const CALL_LIMIT_WARNING_SECONDS = 5 * 60
 
 export type CallType = 'voice' | 'video'
@@ -104,25 +105,30 @@ export async function sumCallSecondsForUser(userId: string, since: Date): Promis
 }
 
 export interface CallLimitInfo {
-  /** false = nível 2/3, chamadas ilimitadas. */
   limited: boolean
-  /** Segundos restantes neste mês (só relevante quando limited = true). */
   remainingSeconds: number
 }
 
 /**
- * Nível 1 tem 30 min/mês de chamada (acumulado); Nível 2/3 é ilimitado.
- * Quem não tem nenhum plano é tratado como Nível 1 (mais restritivo) por segurança.
+ * Nível 2: 20 min/mês de voz. Nível 3: 30 min/mês (voz/vídeo).
+ * Nível 1 e gratuito não têm chamada no app (remaining = 0).
  */
 export async function getCallLimitInfo(userId: string, planIds: PlanId[]): Promise<CallLimitInfo> {
   const effectivePlan = getEffectivePlanId(planIds)
-  if (effectivePlan === 'nivel2' || effectivePlan === 'nivel3') {
-    return { limited: false, remainingSeconds: Infinity }
+  const monthlyCap =
+    effectivePlan === 'nivel3'
+      ? NIVEL3_MONTHLY_LIMIT_SECONDS
+      : effectivePlan === 'nivel2'
+        ? NIVEL2_MONTHLY_LIMIT_SECONDS
+        : 0
+
+  if (monthlyCap <= 0) {
+    return { limited: true, remainingSeconds: 0 }
   }
 
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const usedSeconds = await sumCallSecondsForUser(userId, startOfMonth)
-  const remainingSeconds = Math.max(0, NIVEL1_MONTHLY_LIMIT_SECONDS - usedSeconds)
+  const remainingSeconds = Math.max(0, monthlyCap - usedSeconds)
   return { limited: true, remainingSeconds }
 }

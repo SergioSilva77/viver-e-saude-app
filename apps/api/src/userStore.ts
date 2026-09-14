@@ -169,3 +169,29 @@ export async function bumpTokenVersion(id: string): Promise<number> {
   )
   return rows[0]?.token_version ?? 0
 }
+
+export async function findPublicByIds(ids: string[]): Promise<
+  Array<{ id: string; fullName: string; photoUrl: string; planIds: string[]; role: UserRole }>
+> {
+  if (ids.length === 0) return []
+  const { rows } = await query<{
+    id: string
+    full_name: string
+    photo_url: string
+    plan_ids: string[]
+    role: UserRole
+  }>(
+    `SELECT id, full_name, photo_url, plan_ids, role
+     FROM users
+     WHERE id = ANY($1::varchar[])`,
+    [ids],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    photoUrl: row.photo_url ?? '',
+    planIds: row.plan_ids ?? [],
+    role: row.role ?? 'user',
+  }))
+}
+

@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http'
 import { WebSocket, WebSocketServer } from 'ws'
+import { getEffectivePlanId, type PlanId } from '@viver-saude/shared'
 import { verifyUserToken } from '../auth.js'
 import { findById } from '../userStore.js'
 import { setConsultantStatus } from '../consultantStore.js'
@@ -126,6 +127,19 @@ export function sendToUser(userId: string, message: ServerMessage): void {
 
 export function isUserOnline(userId: string): boolean {
   return (connections.get(userId)?.size ?? 0) > 0
+}
+
+/** IDs com pelo menos um socket aberto, opcionalmente filtrados por papel. */
+export function listOnlineUserIds(role?: 'user' | 'consultant'): string[] {
+  const ids: string[] = []
+  for (const [userId, sockets] of connections) {
+    if (sockets.size === 0) continue
+    const first = sockets.values().next().value as ConnectedSocket | undefined
+    if (!first) continue
+    if (role && first.role !== role) continue
+    ids.push(userId)
+  }
+  return ids
 }
 
 /**
@@ -422,6 +436,7 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
               break
             }
             try {
+              // Só usuário ↔ consultor (nunca user↔user).
               const callee = await findById(calleeId)
               if (!callee || callee.role === user.role) {
                 send(ws, { type: 'error', message: 'Só é possível ligar entre um usuário e um consultor.' })
@@ -438,14 +453,22 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
                 break
               }
 
-              // Limite mensal do Nível 1 (30 min/mês) — verifica quem dos dois é o usuário
-              // (o outro é sempre o consultor, que não tem limite de plano).
               const levelUser = user.role === 'user' ? user : callee
-              const limitInfo = await getCallLimitInfo(levelUser.id, levelUser.planIds as import('@viver-saude/shared').PlanId[])
+              const effectivePlan = getEffectivePlanId(levelUser.planIds as PlanId[])
+              if (callType === 'video' && effectivePlan !== 'nivel3') {
+                send(ws, { type: 'error', message: 'Chamada de vídeo está disponível no Nível 3, por agendamento.' })
+                break
+              }
+              if (callType === 'voice' && effectivePlan !== 'nivel2' && effectivePlan !== 'nivel3') {
+                send(ws, { type: 'error', message: 'Chamada de voz está disponível a partir do Nível 2, por agendamento.' })
+                break
+              }
+
+              const limitInfo = await getCallLimitInfo(levelUser.id, levelUser.planIds as PlanId[])
               if (limitInfo.limited && limitInfo.remainingSeconds <= 0) {
                 send(ws, {
                   type: 'error',
-                  message: 'Limite mensal de chamadas do Nível 1 atingido (30 min/mês). Assine o Nível 2 para chamadas ilimitadas.',
+                  message: 'Limite mensal de chamadas atingido. Aguarde o próximo mês ou faça upgrade.',
                 })
                 break
               }

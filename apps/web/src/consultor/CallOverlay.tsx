@@ -140,7 +140,7 @@ export function CallOverlay() {
         >
           <i className="bi bi-exclamation-triangle-fill" style={{ color: '#fff' }} />
           <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>
-            Faltam {Math.ceil((manager.limitWarningSeconds ?? 300) / 60)} minutos no seu limite mensal (Nível 1).
+            Faltam {Math.ceil((manager.limitWarningSeconds ?? 300) / 60)} minutos no seu limite mensal.
           </span>
         </div>
       )}

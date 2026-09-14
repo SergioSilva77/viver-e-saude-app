@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState, useCallback } from 'react'
+import { type ReactNode, useEffect, useState, useCallback } from 'react'
 import { TutorialOverlay, type TutorialStep } from './TutorialOverlay'
 /** Lightweight markdown → HTML (headings, bold, italic, lists, paragraphs) */
 function mdToHtml(md: string): string {
@@ -65,7 +65,7 @@ import { LinkPlanScreen } from './auth/LinkPlanScreen'
 import { MeuGuardiao } from './guardiao/MeuGuardiao'
 import { HealthProfileEditor } from './health/HealthProfileEditor'
 import { loadHealthProfile, saveHealthProfile, clearHealthProfile, type HealthProfile } from './health/healthProfile'
-import { loadSession, saveSession, clearSession, updateSession } from './auth/sessionTypes'
+import { loadSession, saveSession, clearSession } from './auth/sessionTypes'
 import { clearChats } from './guardiao/chatHistory'
 import { realtimeService } from './realtime/realtimeService'
 import { useRealtimeStatus } from './realtime/useRealtimeStatus'
@@ -115,14 +115,88 @@ function expandPlanHierarchy(activePlans: PlanId[]): Set<PlanId> {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Countdown helpers
+   Home: status do plano + reunião de segunda no Meet
 ───────────────────────────────────────────────────────────── */
-function formatCountdown(ms: number): string {
-  if (ms <= 0) return '0h 0min'
-  const totalMin = Math.floor(ms / 60000)
-  const hours = Math.floor(totalMin / 60)
-  const mins = totalMin % 60
-  return `${hours}h ${mins}min`
+const MEET_URL =
+  (import.meta.env.VITE_GOOGLE_MEET_CONSULTOR_URL as string | undefined)?.trim() ||
+  'https://meet.google.com/'
+
+function nextMonday(from = new Date()): Date {
+  const date = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  const add = (1 - date.getDay() + 7) % 7
+  if (add === 0) {
+    date.setDate(date.getDate() + 7)
+    return date
+  }
+  date.setDate(date.getDate() + add)
+  return date
+}
+
+function highestPlanRank(planIds: PlanId[]): number {
+  if (planIds.includes('nivel3')) return 3
+  if (planIds.includes('nivel2')) return 2
+  if (planIds.includes('nivel1')) return 1
+  return 0
+}
+
+function HomePlanBadge({ planIds }: { planIds: PlanId[] }) {
+  const rank = highestPlanRank(planIds)
+  const hasPlan = rank > 0
+  const label = hasPlan ? `Nível ${rank} ativo` : 'Plano Gratuito'
+  const quota =
+    rank === 3
+      ? 'Guardião AI: até 100 mensagens diárias inclusas.'
+      : rank === 2
+        ? 'Guardião AI: até 70 mensagens diárias inclusas.'
+        : rank === 1
+          ? 'Guardião AI: até 30 mensagens diárias inclusas.'
+          : 'Guardião AI: 5 mensagens diárias inclusas.'
+
+  return (
+    <div className={`home-plan-badge ${hasPlan ? 'home-plan-badge-active' : ''}`}>
+      <i className={`bi ${hasPlan ? 'bi-patch-check-fill' : 'bi-flower1'}`} />
+      <div>
+        <strong>{label}</strong>
+        <span>{quota}</span>
+      </div>
+    </div>
+  )
+}
+
+function MeetConsultorCard() {
+  const now = new Date()
+  const monday = now.getDay() === 1
+  const next = nextMonday(now)
+  const nextLabel = `${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}`
+
+  return (
+    <div className="consultor-card consultor-card-meet">
+      <div className="consultor-card-icon">
+        <i className="bi bi-headset" />
+      </div>
+      <div className="consultor-card-body">
+        <div className="consultor-card-title">Falar com consultor</div>
+        <div className="consultor-card-sub">
+          {monday
+            ? 'Hoje é segunda: entre na reunião gratuita no Google Meet.'
+            : `A reunião gratuita é toda segunda. A próxima é dia ${nextLabel}.`}
+        </div>
+      </div>
+      {monday ? (
+        <button
+          type="button"
+          className="btn-consultor-cta"
+          onClick={() => window.open(MEET_URL, '_blank', 'noopener,noreferrer')}
+        >
+          Falar com consultor
+        </button>
+      ) : (
+        <button type="button" className="btn-consultor-cta" disabled>
+          Na próxima segunda ({nextLabel})
+        </button>
+      )}
+    </div>
+  )
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -280,49 +354,6 @@ function ContaPreview() {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Botão de consultor (uso único para Nível 1)
-───────────────────────────────────────────────────────────── */
-interface ConsultorCardProps {
-  used: boolean
-  onUse: () => void
-}
-
-function ConsultorCard({ used, onUse }: ConsultorCardProps) {
-  function handleClick() {
-    if (used) return
-    const confirmed = confirm(
-      'Você tem direito a 1 sessão gratuita de 30 min com nosso consultor.\n\nAo confirmar, este benefício será marcado como utilizado e não poderá ser usado novamente.\n\nDeseja prosseguir?'
-    )
-    if (!confirmed) return
-    onUse()
-    window.open('https://wa.me/5500000000000?text=Olá!%20Quero%20agendar%20minha%20sessão%20gratuita.', '_blank')
-  }
-
-  return (
-    <div className={`consultor-card ${used ? 'consultor-card-used' : 'consultor-card-available'}`}>
-      <div className="consultor-card-icon">
-        <i className={`bi ${used ? 'bi-check-circle-fill' : 'bi-headset'}`}></i>
-      </div>
-      <div className="consultor-card-body">
-        <div className="consultor-card-title">
-          {used ? 'Sessão com consultor utilizada' : '30 min grátis com consultor'}
-        </div>
-        <div className="consultor-card-sub">
-          {used
-            ? 'Você já utilizou este benefício exclusivo do Nível 1.'
-            : 'Benefício exclusivo do Nível 1 — use uma única vez.'}
-        </div>
-      </div>
-      {!used && (
-        <button type="button" className="btn-consultor-cta" onClick={handleClick}>
-          Agendar
-        </button>
-      )}
-    </div>
-  )
-}
-
-/* ─────────────────────────────────────────────────────────────
    App principal
 ───────────────────────────────────────────────────────────── */
 type AuthState = 'checking' | 'unauthenticated' | 'authenticated'
@@ -338,13 +369,6 @@ function App() {
   const [sessionUserPhotoUrl, setSessionUserPhotoUrl] = useState<string>('')
   const [sessionUserToken, setSessionUserToken] = useState<string>('')
   const [sessionUserRole, setSessionUserRole] = useState<'user' | 'consultant'>('user')
-
-  // 24h MeuGuardião unlock state
-  const [guardiao24hUntil, setGuardiao24hUntil] = useState<number | null>(null)
-  const [guardiao24hRemaining, setGuardiao24hRemaining] = useState<number>(0)
-
-  // Consultant one-time use
-  const [consultantUsed, setConsultantUsed] = useState(false)
 
   // Health profile — loaded per user after login
   const [healthProfile, setHealthProfile] = useState<HealthProfile>(() => loadHealthProfile(undefined))
@@ -438,9 +462,6 @@ function App() {
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeFull | null>(null)
   const [recipeLoading, setRecipeLoading] = useState(false)
 
-  // Confirm dialog ref (for consultant)
-  const consultorConfirmedRef = useRef(false)
-
   // Pre-flight check Stripe availability once on mount.
   // This is a defense layer — disables Assinar buttons if the backend reports Stripe is not configured.
   useEffect(() => {
@@ -494,8 +515,6 @@ function App() {
       }) as PlanId[]
 
       setActivePlans(validPlans)
-      setGuardiao24hUntil(session.guardiao24hUnlockedUntil ?? null)
-      setConsultantUsed(session.consultantUsed ?? false)
       setSessionUserId(session.userId)
       setSessionUserEmail(session.email)
       setSessionUserName(session.fullName ?? '')
@@ -572,18 +591,6 @@ function App() {
     return () => clearInterval(id)
   }, [authState])
 
-  // Countdown ticker for 24h MeuGuardião unlock
-  useEffect(() => {
-    if (!guardiao24hUntil) return
-    function tick() {
-      const remaining = (guardiao24hUntil ?? 0) - Date.now()
-      setGuardiao24hRemaining(Math.max(0, remaining))
-    }
-    tick()
-    const id = setInterval(tick, 60000) // update every minute
-    return () => clearInterval(id)
-  }, [guardiao24hUntil])
-
   async function handleSubscribe(planId: PlanId, userData?: { fullName: string; email: string }) {
     setCheckoutError(null)
 
@@ -618,12 +625,6 @@ function App() {
     } finally {
       setCheckoutLoading(null)
     }
-  }
-
-  function handleConsultorUse() {
-    consultorConfirmedRef.current = true
-    setConsultantUsed(true)
-    updateSession({ consultantUsed: true })
   }
 
   async function handleCancelSubscription(planId: PlanId) {
@@ -727,8 +728,6 @@ function App() {
               notificationCenter.load()
             }
           }
-          setGuardiao24hUntil(session?.guardiao24hUnlockedUntil ?? null)
-          setConsultantUsed(session?.consultantUsed ?? false)
           setAuthState('authenticated')
         }}
         onSubscribe={async (planId, userData) => {
@@ -765,19 +764,15 @@ function App() {
     )
   }
 
-  // Resolve if guardiao is in 24h unlock window
-  const guardiao24hActive = guardiao24hUntil !== null && guardiao24hUntil > Date.now()
-
-  // Compute access for current section
   function resolveAccess(section: AppSection) {
-    // Special case: nivel1 user within 24h window gets full guardiao access
-    if (section === 'meuguardiao' && guardiao24hActive) return 'free' as const
+    if (sessionUserRole === 'consultant' && (section === 'consultor' || section === 'conta' || section === 'inicio')) {
+      return 'free' as const
+    }
     return getSectionAccessForPlans(activePlans, section)
   }
 
   const access = resolveAccess(activeSection)
   const isLocked = access === 'locked'
-  const isLimited = access === 'limited'
 
   const goToPlans = () => setActiveSection('inicio')
 
@@ -800,7 +795,6 @@ function App() {
     setAuthState('unauthenticated')
   }
 
-  const isNivel1Only = activePlans.includes('nivel1') && !activePlans.includes('nivel2') && !activePlans.includes('nivel3')
   const planLabel = activePlans.length > 0
     ? activePlans.map((id) => `Nível ${id.replace('nivel', '')}`).join(' + ') + ' ativo'
     : 'Sem plano ativo'
@@ -879,6 +873,8 @@ function App() {
           const allPlansCovered = plans.every((p) => effectivePlans.has(p.id))
           return (
             <>
+              <HomePlanBadge planIds={activePlans} />
+              <MeetConsultorCard />
               <div>
                 <h2 className="section-title">
                   {allPlansCovered ? 'Sua jornada começa aqui' : 'Escolha seu plano'}
@@ -987,55 +983,22 @@ function App() {
               <GuardiaoPreview />
             </LockedSection>
           ) : (
-            <>
-              {/* Banner de 24h para Nível 1 */}
-              {guardiao24hActive && isNivel1Only && (
-                <div className="guardiao-24h-banner">
-                  <i className="bi bi-clock-history"></i>
-                  <div>
-                    <strong>Acesso completo por mais {formatCountdown(guardiao24hRemaining)}</strong>
-                    <span>Após este período, o acesso ao MeuGuardião ficará limitado. Assine o Nível 2 para acesso permanente.</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Aviso de acesso limitado (após expirar 24h, nivel1 sem upgrade) */}
-              {isLimited && !guardiao24hActive && (
-                <div className="guardiao-limited-banner">
-                  <i className="bi bi-info-circle"></i>
-                  <div>
-                    <strong>Acesso limitado</strong>
-                    <span>Você é do Nível 1. Assine o Nível 2 para acesso completo e permanente ao MeuGuardião.</span>
-                  </div>
-                  <button type="button" className="btn-upgrade-mini" onClick={goToPlans}>
-                    Ver planos
-                  </button>
-                </div>
-              )}
-
-              {/* Botão de consultor — só aparece para nivel1 */}
-              {isNivel1Only && (
-                <ConsultorCard used={consultantUsed} onUse={handleConsultorUse} />
-              )}
-
-              <MeuGuardiao
-                userId={sessionUserId}
-                userEmail={sessionUserEmail}
-                userProfile={{
-                  name: healthProfile.name || undefined,
-                  age: typeof healthProfile.age === 'number' ? healthProfile.age : undefined,
-                  weightKg: typeof healthProfile.weightKg === 'number' ? healthProfile.weightKg : undefined,
-                  heightCm: typeof healthProfile.heightCm === 'number' ? healthProfile.heightCm : undefined,
-                  bloodType: healthProfile.bloodType || undefined,
-                  goals: healthProfile.goals.length > 0 ? healthProfile.goals : undefined,
-                  familyHistory: healthProfile.familyHistory.length > 0
-                    ? healthProfile.familyHistory.map((e) => ({ relation: e.relation, notes: e.notes }))
-                    : undefined,
-                }}
-                guardiao24hUntil={guardiao24hUntil}
-                onViewPlans={goToPlans}
-              />
-            </>
+            <MeuGuardiao
+              userId={sessionUserId}
+              userEmail={sessionUserEmail}
+              userProfile={{
+                name: healthProfile.name || undefined,
+                age: typeof healthProfile.age === 'number' ? healthProfile.age : undefined,
+                weightKg: typeof healthProfile.weightKg === 'number' ? healthProfile.weightKg : undefined,
+                heightCm: typeof healthProfile.heightCm === 'number' ? healthProfile.heightCm : undefined,
+                bloodType: healthProfile.bloodType || undefined,
+                goals: healthProfile.goals.length > 0 ? healthProfile.goals : undefined,
+                familyHistory: healthProfile.familyHistory.length > 0
+                  ? healthProfile.familyHistory.map((e) => ({ relation: e.relation, notes: e.notes }))
+                  : undefined,
+              }}
+              onViewPlans={goToPlans}
+            />
           )
         )}
 
@@ -1156,7 +1119,7 @@ function App() {
               </div>
             </LockedSection>
           ) : sessionUserId && sessionUserToken ? (
-            <ConsultorSection token={sessionUserToken} selfId={sessionUserId} role={sessionUserRole} />
+            <ConsultorSection token={sessionUserToken} selfId={sessionUserId} role={sessionUserRole} planIds={activePlans} />
           ) : (
             <div className="chat-list-empty">
               <p>Faça login novamente para acessar o chat com consultores.</p>
@@ -1259,7 +1222,6 @@ function App() {
                   { icon: 'bi-arrow-up-circle', label: 'Fazer upgrade de plano', action: goToPlans },
                   { icon: 'bi-x-circle', label: 'Cancelar assinatura', action: (() => {
                     const monthlyPlan = activePlans.find((pid) => plans.find((p) => p.id === pid)?.billingInterval === 'monthly')
-                    // nivel1 is one_time — no subscription to cancel
                     if (!monthlyPlan) {
                       if (activePlans.length > 0) {
                         return () => alert('Seu plano atual é de pagamento único e não possui assinatura recorrente para cancelar.')
@@ -1449,6 +1411,9 @@ function App() {
               onClick={() => setActiveSection(item.id)}
             >
               <i className={`bi ${item.icon}`}></i>
+              {(item.id === 'meuguardiao' || item.id === 'consultor') && !itemLocked && (
+                <span className="comic-new-badge">NEW</span>
+              )}
               {itemLocked && <i className="bi bi-lock-fill nav-lock-badge"></i>}
             </button>
           )

@@ -69,14 +69,14 @@ export const appName = 'Viver & Saúde'
 export const plans: PlanDefinition[] = [
   {
     id: 'nivel1',
-    label: 'Cadastro único - Nível 1',
-    priceInCents: 2990,
-    billingInterval: 'one_time',
-    description: 'Ativa a jornada inicial do usuário e libera a primeira camada do ecossistema.',
+    label: 'Nível 1 - Assinatura Mensal',
+    priceInCents: 818,
+    billingInterval: 'monthly',
+    description: 'Chat com consultor, MeuGuardião e reunião semanal no Google Meet.',
     benefits: [
-      'Desbloqueio inicial do MeuGuardião por 24 horas',
-      '30 minutos com consultor gratuito uma única vez',
-      'Acesso ao onboarding pago obrigatório',
+      'MeuGuardião com até 30 mensagens diárias',
+      'Chat 1:1 com consultor no aplicativo',
+      'Reunião gratuita toda segunda-feira no Google Meet',
     ],
     whatsappEnabled: false,
     telegramEnabled: false,
@@ -84,15 +84,14 @@ export const plans: PlanDefinition[] = [
   },
   {
     id: 'nivel2',
-    label: 'Assinatura mensal - Nível 2',
-    priceInCents: 1807,
+    label: 'Nível 2 - Assinatura Mensal',
+    priceInCents: 1636,
     billingInterval: 'monthly',
-    description: 'Assinatura recorrente para uso contínuo dos recursos de rotina.',
+    description: 'Tudo do Nível 1 e chamada de voz por agendamento.',
     benefits: [
-      'MeuGuardião com até 50 mensagens diárias',
-      '70 receitas naturais e e-book',
-      'Bate-papo gratuito toda segunda-feira',
-      'Botão de WhatsApp para consultoria gratuita',
+      'MeuGuardião com até 70 mensagens diárias',
+      'Tudo do Nível 1',
+      'Chamada de voz por agendamento (até 20 min/mês)',
     ],
     whatsappEnabled: true,
     telegramEnabled: false,
@@ -100,17 +99,15 @@ export const plans: PlanDefinition[] = [
   },
   {
     id: 'nivel3',
-    label: 'Nível 2 - Experiência Premium',
-    priceInCents: 7990,
+    label: 'Nível 3 - Experiência Premium',
+    priceInCents: 3272,
     billingInterval: 'monthly',
-    description: 'Plano premium com consultoria e grupos exclusivos.',
+    description: 'Tudo do Nível 2, vídeo por agendamento e desconto de fábrica.',
     benefits: [
       'MeuGuardião com até 100 mensagens diárias',
-      'Treinamento gratuito de até 30 minutos',
-      'Todos os benefícios dos níveis 1 e 2',
-      'Grupos exclusivos no WhatsApp e Telegram',
-      'Atendimento por videoconferência sob agendamento',
-      'Acesso à fábrica com descontos e indicações da plataforma',
+      'Tudo do Nível 2',
+      'Chamada de vídeo por agendamento (até 30 min/mês)',
+      'Desconto de fábrica em produtos naturais',
     ],
     whatsappEnabled: true,
     telegramEnabled: true,
@@ -230,24 +227,14 @@ export function getEffectivePlanId(planIds: PlanId[]): PlanId | null {
 }
 
 export function getSectionAccess(planId: PlanId | null, section: AppSection): SectionAccess {
-  if (section === 'inicio') return 'free'
+  if (section === 'inicio' || section === 'conta' || section === 'meuguardiao') return 'free'
 
   if (!planId) return 'locked'
 
   switch (section) {
-    case 'meuguardiao':
-      if (planId === 'nivel1') return 'limited'
-      return 'free'
-
     case 'receitas':
-      if (planId === 'nivel1') return 'locked'
-      return 'free'
-
     case 'comunidade':
-      if (planId === 'nivel3') return 'free'
-      return 'locked'
-
-    case 'conta':
+      // Conteúdo filtrado por `audience` de cada item, não pela aba inteira.
       return 'free'
 
     case 'consultor':
@@ -260,11 +247,11 @@ export function getSectionAccess(planId: PlanId | null, section: AppSection): Se
 
 export const sectionRequiredPlan: Record<AppSection, string> = {
   inicio: '',
-  meuguardiao: 'Nível 1',
-  receitas: 'Nível 2',
-  comunidade: 'Nível 3',
+  meuguardiao: '',
+  receitas: 'Nível 1',
+  comunidade: 'Nível 1',
   consultor: 'Nível 1',
-  conta: 'Nível 1',
+  conta: '',
 }
 
 export function resolveOnboardingDecision(status: BillingStatus): OnboardingDecision {

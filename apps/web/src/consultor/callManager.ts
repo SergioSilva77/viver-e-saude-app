@@ -29,7 +29,7 @@ class CallManagerImpl {
   cameraEnabled = true
   elapsedSeconds = 0
   errorMessage: string | null = null
-  /** Segundos restantes quando o aviso de limite (Nível 1) chega — null = sem aviso ativo. */
+  /** Segundos restantes quando o aviso de limite mensal chega — null = sem aviso ativo. */
   limitWarningSeconds: number | null = null
 
   private pc: RTCPeerConnection | null = null
@@ -187,7 +187,7 @@ class CallManagerImpl {
 
       case 'call:ended':
         if (msg.reason === 'limit_reached') {
-          this.errorMessage = 'Sua chamada foi encerrada: limite mensal do Nível 1 atingido.'
+          this.errorMessage = 'Sua chamada foi encerrada: limite mensal do plano atingido.'
         }
         this.teardown()
         break
@@ -223,7 +223,7 @@ class CallManagerImpl {
 
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: video ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+      video: video ? { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 15 } } : false,
     })
     this.micEnabled = true
     this.cameraEnabled = video

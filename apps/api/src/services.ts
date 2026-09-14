@@ -32,7 +32,8 @@ export async function createCheckoutSession(planId: PlanId, customerEmail?: stri
   const stripe = getStripeClient()
   const stripeConf = getStripeConfig()
   const plan = getPlan(planId)
-  const mode = plan.billingInterval === 'monthly' ? 'subscription' : 'payment'
+  const isMonthly = plan.billingInterval === 'monthly'
+  const mode = isMonthly ? 'subscription' : 'payment'
   const configuredPriceId = stripeConf[`priceId${planId.charAt(0).toUpperCase()}${planId.slice(1)}` as keyof typeof stripeConf] as string
 
   return stripe.checkout.sessions.create({
