@@ -7,6 +7,7 @@ dist/
 .ai-config.json
 .stripe-config.json
 .firebase-service-account.json
+.weekly-meet.json
 backups/
 .DS_Store
 Thumbs.db

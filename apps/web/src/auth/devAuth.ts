@@ -74,3 +74,45 @@ export async function devAuthenticate(email: string, password: string): Promise<
     }
   }
 }
+
+export async function authenticateWithGoogle(idToken: string): Promise<DevAuthResult> {
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    })
+    const data = await res.json() as {
+      ok?: boolean
+      message?: string
+      userId?: string
+      email?: string
+      fullName?: string
+      photoUrl?: string
+      planIds?: string[]
+      planExpiresAt?: Record<string, string>
+      token?: string
+      role?: 'user' | 'consultant'
+    }
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.message ?? 'Falha na autenticação com o Google.' }
+    }
+    const planExpiresAt: Record<string, number> = {}
+    for (const [planId, iso] of Object.entries(data.planExpiresAt ?? {})) {
+      if (iso) planExpiresAt[planId] = new Date(iso).getTime()
+    }
+    return {
+      ok: true,
+      userId: data.userId,
+      email: data.email,
+      fullName: data.fullName,
+      photoUrl: data.photoUrl,
+      planIds: (data.planIds ?? []) as PlanId[],
+      planExpiresAt,
+      token: data.token,
+      role: data.role,
+    }
+  } catch {
+    return { ok: false, error: 'Não foi possível conectar ao servidor. Verifique sua conexão.' }
+  }
+}

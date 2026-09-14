@@ -117,10 +117,6 @@ function expandPlanHierarchy(activePlans: PlanId[]): Set<PlanId> {
 /* ─────────────────────────────────────────────────────────────
    Home: status do plano + reunião de segunda no Meet
 ───────────────────────────────────────────────────────────── */
-const MEET_URL =
-  (import.meta.env.VITE_GOOGLE_MEET_CONSULTOR_URL as string | undefined)?.trim() ||
-  'https://meet.google.com/'
-
 function nextMonday(from = new Date()): Date {
   const date = new Date(from.getFullYear(), from.getMonth(), from.getDate())
   const add = (1 - date.getDay() + 7) % 7
@@ -164,35 +160,65 @@ function HomePlanBadge({ planIds }: { planIds: PlanId[] }) {
 }
 
 function MeetConsultorCard() {
-  const now = new Date()
-  const monday = now.getDay() === 1
-  const next = nextMonday(now)
-  const nextLabel = `${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}`
+  const [meetUrl, setMeetUrl] = useState('')
+  const [isOpen, setIsOpen] = useState(false)
+  const [nextLabel, setNextLabel] = useState('')
+  const [timeLabel, setTimeLabel] = useState('19:00')
+  const [consultantName, setConsultantName] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/weekly-meet')
+      .then((r) => r.json())
+      .then((data: {
+        meetUrl?: string
+        isOpen?: boolean
+        nextLabel?: string
+        timeLabel?: string
+        consultantName?: string
+      }) => {
+        if (cancelled) return
+        setMeetUrl(data.meetUrl ?? '')
+        setIsOpen(Boolean(data.isOpen && data.meetUrl))
+        setNextLabel(data.nextLabel ?? '')
+        setTimeLabel(data.timeLabel ?? '19:00')
+        setConsultantName(data.consultantName ?? '')
+      })
+      .catch(() => {
+        const next = nextMonday()
+        if (!cancelled) {
+          setNextLabel(`${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}`)
+        }
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const host = consultantName ? ` Anfitrião: ${consultantName}.` : ''
 
   return (
     <div className="consultor-card consultor-card-meet">
       <div className="consultor-card-icon">
-        <i className="bi bi-headset" />
+        <i className="bi bi-camera-video" />
       </div>
       <div className="consultor-card-body">
-        <div className="consultor-card-title">Falar com consultor</div>
+        <div className="consultor-card-title">Bate-papo semanal</div>
         <div className="consultor-card-sub">
-          {monday
-            ? 'Hoje é segunda: entre na reunião gratuita no Google Meet.'
-            : `A reunião gratuita é toda segunda. A próxima é dia ${nextLabel}.`}
+          {isOpen
+            ? `Hoje é segunda: entre no Meet às ${timeLabel}.${host}`
+            : `Toda segunda às ${timeLabel}. A próxima é dia ${nextLabel}.${host}`}
         </div>
       </div>
-      {monday ? (
+      {isOpen ? (
         <button
           type="button"
           className="btn-consultor-cta"
-          onClick={() => window.open(MEET_URL, '_blank', 'noopener,noreferrer')}
+          onClick={() => window.open(meetUrl, '_blank', 'noopener,noreferrer')}
         >
-          Falar com consultor
+          Entrar no bate-papo semanal
         </button>
       ) : (
         <button type="button" className="btn-consultor-cta" disabled>
-          Na próxima segunda ({nextLabel})
+          {nextLabel ? `Na próxima segunda (${nextLabel})` : 'Na próxima segunda'}
         </button>
       )}
     </div>

@@ -60,7 +60,7 @@ import {
   listAppointmentsNeedingReminder,
   markReminderSent,
 } from './appointmentStore.js'
-import { sendAppointmentEmail } from './emailService.js'
+import { sendAppointmentEmail, sendWeeklyMeetEmail } from './emailService.js'
 import { listCommunityLinks, upsertCommunityLink, removeCommunityLink, type CommunityPlatform } from './communityStore.js'
 import { listRecipes, listRecipesMeta, getRecipeById, upsertRecipe, removeRecipe } from './recipeStore.js'
 import {
@@ -71,7 +71,15 @@ import {
   deleteChat as dbDeleteChat,
   addMessage,
 } from './chatStore.js'
-import { shutdown as shutdownDb } from './db.js'
+import { verifyGoogleIdToken } from './googleAuth.js'
+import {
+  loadWeeklyMeet,
+  saveWeeklyMeet,
+  publicWeeklyMeet,
+  shouldSendWeeklyEmail,
+  markWeeklyEmailSent,
+  todayYmd,
+} from './weeklyMeet.js'
 import {
   loadManifest,
   removeManifestEntry,
@@ -116,8 +124,9 @@ const registerFreeSchema = z.object({
 })
 
 const googleAuthSchema = z.object({
-  email: z.string().email(),
-  fullName: z.string().min(1).max(100),
+  idToken: z.string().min(20).optional(),
+  email: z.string().email().optional(),
+  fullName: z.string().min(1).max(100).optional(),
   googleId: z.string().min(1).optional(),
   photoUrl: z.string().optional(),
 })
@@ -1089,6 +1098,79 @@ app.post('/api/admin/smtp-settings', requireAdminToken, (req, res) => {
   }
 })
 
+const weeklyMeetSettingsSchema = z.object({
+  meetUrl: z.string().max(500).optional(),
+  consultantEmail: z.string().email().or(z.literal('')).optional(),
+  consultantName: z.string().max(120).optional(),
+  weekday: z.number().int().min(0).max(6).optional(),
+  time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  durationMinutes: z.number().int().min(15).max(180).optional(),
+  emailHour: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+})
+
+async function dispatchWeeklyMeetEmails(force = false): Promise<{ sent: number; skipped?: string }> {
+  const cfg = loadWeeklyMeet()
+  if (!cfg.meetUrl) return { sent: 0, skipped: 'Link do Meet ainda não configurado.' }
+  if (!force && !shouldSendWeeklyEmail(cfg)) return { sent: 0, skipped: 'Fora do horário de envio.' }
+
+  const pub = publicWeeklyMeet(cfg)
+  const users = await listUsers()
+  const recipients = new Map<string, string>()
+  for (const user of users) {
+    const email = user.email?.trim().toLowerCase()
+    if (email && email.includes('@')) recipients.set(email, user.fullName || email)
+  }
+  if (cfg.consultantEmail) {
+    recipients.set(cfg.consultantEmail, cfg.consultantName || cfg.consultantEmail)
+  }
+
+  let sent = 0
+  for (const [to, fullName] of recipients) {
+    const result = await sendWeeklyMeetEmail({
+      to,
+      fullName,
+      meetUrl: cfg.meetUrl,
+      dateLabel: pub.dateLabel,
+      timeLabel: pub.timeLabel,
+      consultantName: cfg.consultantName,
+      consultantEmail: cfg.consultantEmail,
+    })
+    if (result.sent) sent += 1
+    await new Promise((r) => setTimeout(r, 120))
+  }
+  markWeeklyEmailSent(todayYmd(cfg))
+  console.log(`[WeeklyMeet] E-mails enviados: ${sent}/${recipients.size}`)
+  return { sent }
+}
+
+app.get('/api/weekly-meet', (_req, res) => {
+  res.json(publicWeeklyMeet(loadWeeklyMeet()))
+})
+
+app.get('/api/admin/weekly-meet', requireAdminToken, (_req, res) => {
+  const cfg = loadWeeklyMeet()
+  res.json({ ...cfg, preview: publicWeeklyMeet(cfg) })
+})
+
+app.post('/api/admin/weekly-meet', requireAdminToken, (req, res) => {
+  try {
+    const body = weeklyMeetSettingsSchema.parse(req.body ?? {})
+    const saved = saveWeeklyMeet(body)
+    res.json({ ok: true, message: 'Bate-papo semanal salvo.', ...saved, preview: publicWeeklyMeet(saved) })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao salvar o bate-papo semanal.' })
+  }
+})
+
+app.post('/api/admin/weekly-meet/send', requireAdminToken, async (_req, res) => {
+  try {
+    const result = await dispatchWeeklyMeetEmails(true)
+    res.json({ ok: true, ...result, message: `E-mails enviados: ${result.sent}.` })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao enviar e-mails.' })
+  }
+})
+
 // ── AI: knowledge files ────────────────────────────────────
 app.get('/api/admin/knowledge', requireAdminToken, (_req, res) => {
   try {
@@ -1484,18 +1566,33 @@ app.post('/api/auth/register-free', async (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   try {
-    const { email, fullName, photoUrl } = googleAuthSchema.parse(req.body)
-    const normalizedEmail = email.toLowerCase().trim()
-    let user = await findByEmail(normalizedEmail)
+    const body = googleAuthSchema.parse(req.body)
+    let email = body.email?.toLowerCase().trim()
+    let fullName = body.fullName?.trim()
+    let photoUrl = body.photoUrl || ''
+
+    if (body.idToken) {
+      const identity = await verifyGoogleIdToken(body.idToken)
+      email = identity.email
+      fullName = identity.fullName
+      photoUrl = identity.photoUrl || photoUrl
+    }
+
+    if (!email || !fullName) {
+      res.status(400).json({ message: 'Token do Google ou e-mail e nome são obrigatórios.' })
+      return
+    }
+
+    let user = await findByEmail(email)
     let isNewUser = false
 
     if (!user) {
       isNewUser = true
       user = await upsertUser({
         id: `g_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-        email: normalizedEmail,
-        fullName: fullName.trim(),
-        photoUrl: photoUrl || '',
+        email,
+        fullName,
+        photoUrl,
         password: randomBytes(32).toString('hex'),
         planIds: [],
         role: 'user',
@@ -2457,6 +2554,8 @@ setInterval(() => {
       }
     })
     .catch((err) => console.error('[Reminder] Falha ao buscar agendamentos para lembrete:', err))
+
+  dispatchWeeklyMeetEmails(false).catch((err) => console.error('[WeeklyMeet] Falha no envio automático:', err))
 }, 60_000)
 
 httpServer.listen(config.port, () => {

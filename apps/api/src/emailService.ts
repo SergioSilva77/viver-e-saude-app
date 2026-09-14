@@ -314,3 +314,105 @@ export async function sendAppointmentEmail(params: {
     return { sent: false, reason: msg }
   }
 }
+
+export async function sendWeeklyMeetEmail(params: {
+  to: string
+  fullName: string
+  meetUrl: string
+  dateLabel: string
+  timeLabel: string
+  consultantName: string
+  consultantEmail: string
+}): Promise<{ sent: boolean; reason?: string }> {
+  const smtp = getSmtpConfig()
+  if (!smtp) {
+    console.warn('[Email] SMTP não configurado — e-mail do bate-papo semanal não enviado para', params.to)
+    return { sent: false, reason: 'SMTP não configurado' }
+  }
+
+  const firstName = (params.fullName || params.to).split(' ')[0]
+  const hostLine = params.consultantName
+    ? `O anfitrião desta semana é <strong>${escapeHtml(params.consultantName)}</strong>${params.consultantEmail ? ` (${escapeHtml(params.consultantEmail)})` : ''}.`
+    : ''
+
+  const transporter = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.user, pass: smtp.pass },
+  })
+
+  const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f9f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#2e7d5e,#56a87a);padding:36px 32px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:8px;">💬</div>
+            <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:800;">Bate-papo semanal</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 32px;">
+            <h2 style="color:#1a2e26;font-size:20px;font-weight:700;margin:0 0 12px;">Olá, ${escapeHtml(firstName)}!</h2>
+            <p style="color:#4a6258;font-size:15px;line-height:1.6;margin:0 0 16px;">
+              Hoje tem o bate-papo semanal gratuito do Viver &amp; Saúde.
+            </p>
+            <p style="color:#1a2e26;font-size:15px;line-height:1.6;margin:0 0 8px;">
+              <strong>Data:</strong> ${escapeHtml(params.dateLabel)}<br>
+              <strong>Horário:</strong> ${escapeHtml(params.timeLabel)} (horário de Brasília)
+            </p>
+            ${hostLine ? `<p style="color:#4a6258;font-size:15px;line-height:1.6;margin:0 0 24px;">${hostLine}</p>` : '<div style="height:12px"></div>'}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+              <tr>
+                <td align="center">
+                  <a href="${escapeHtml(params.meetUrl)}" style="display:inline-block;background:#2e7d5e;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:16px 36px;border-radius:14px;">
+                    Entrar no bate-papo semanal
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="color:#7a9e91;font-size:12px;word-break:break-all;margin:0;">
+              Link permanente (o mesmo todas as segundas):<br>
+              <a href="${escapeHtml(params.meetUrl)}" style="color:#2e7d5e;">${escapeHtml(params.meetUrl)}</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f4f9f6;padding:20px 32px;text-align:center;">
+            <p style="color:#b0c9bf;font-size:12px;margin:0;">© ${new Date().getFullYear()} Viver &amp; Saúde</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  try {
+    await transporter.sendMail({
+      from: `"Viver & Saúde" <${smtp.from}>`,
+      to: params.to,
+      subject: `Bate-papo semanal — ${params.dateLabel} às ${params.timeLabel}`,
+      html,
+      text: `Olá, ${firstName}!\n\nHoje tem o bate-papo semanal do Viver & Saúde.\nData: ${params.dateLabel}\nHorário: ${params.timeLabel} (Brasília)\nAnfitrião: ${params.consultantName} ${params.consultantEmail}\n\nEntre neste link (o mesmo todas as segundas):\n${params.meetUrl}\n`,
+    })
+    return { sent: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[Email] Falha ao enviar bate-papo semanal para', params.to, '—', msg)
+    return { sent: false, reason: msg }
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}

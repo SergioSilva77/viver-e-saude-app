@@ -5,6 +5,7 @@ import { CreateUserModal } from './CreateUserModal'
 import { AiSettingsPage } from './settings/AiSettingsPage'
 import { StripeSettingsPage } from './settings/StripeSettingsPage'
 import { SmtpSettingsPage } from './settings/SmtpSettingsPage'
+import { WeeklyMeetSettingsPage } from './settings/WeeklyMeetSettingsPage'
 import { TokenUsagePage } from './settings/TokenUsagePage'
 import { CommunityPage } from './CommunityPage'
 import { RecipesPage } from './RecipesPage'
@@ -76,6 +77,7 @@ const NAV_ITEMS: { id: AdminSection; icon: string; label: string }[] = [
   { id: 'config-ia', icon: 'bi-robot', label: 'IA' },
   { id: 'config-stripe', icon: 'bi-credit-card-2-front-fill', label: 'Stripe' },
   { id: 'config-email', icon: 'bi-envelope-fill', label: 'E-mail' },
+  { id: 'config-meet', icon: 'bi-camera-video-fill', label: 'Bate-papo semanal' },
   { id: 'tokens', icon: 'bi-bar-chart-fill', label: 'Tokens' },
 ]
 
@@ -264,6 +266,8 @@ function App() {
 
           {/* ── E-MAIL (SMTP) ────────────────────────────── */}
           {activeSection === 'config-email' && <SmtpSettingsPage />}
+
+          {activeSection === 'config-meet' && <WeeklyMeetSettingsPage />}
 
           {/* ── TOKENS ───────────────────────────────────── */}
           {activeSection === 'tokens' && (

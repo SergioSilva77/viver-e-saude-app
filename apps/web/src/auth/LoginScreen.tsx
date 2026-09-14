@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { plans } from '@viver-saude/shared'
 import { saveSession } from './sessionTypes'
-import { devAuthenticate } from './devAuth'
+import { authenticateWithGoogle, devAuthenticate } from './devAuth'
+import { loadGoogleIdentity, startGoogleSignIn } from './googleSignIn'
 import { realtimeService } from '../realtime/realtimeService'
 import type { PlanId } from '@viver-saude/shared'
 
@@ -33,6 +34,9 @@ interface Props {
 export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEmail, stripeReady = null }: Props) {
   const [loginView, setLoginView] = useState<LoginView>('login')
   const [loginState, setLoginState] = useState<LoginState>('idle')
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [showGoogleButton, setShowGoogleButton] = useState(false)
+  const googleBtnRef = useRef<HTMLDivElement>(null)
   const [email, setEmail] = useState(prefilledEmail ?? '')
   const [password, setPassword] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -139,6 +143,53 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
     })
     if (result.token) realtimeService.connect(result.token)
     onLogin(resolvedPlanIds)
+  }
+
+  async function completeGoogleSession(idToken: string) {
+    const result = await authenticateWithGoogle(idToken)
+    if (!result.ok) {
+      setErrorMsg(result.error ?? 'Falha na autenticação com o Google.')
+      setLoginState('error')
+      setGoogleLoading(false)
+      return
+    }
+    const resolvedPlanIds = result.planIds ?? []
+    saveSession({
+      userId: result.userId!,
+      email: result.email!,
+      fullName: result.fullName,
+      photoUrl: result.photoUrl,
+      planIds: resolvedPlanIds,
+      planExpiresAt: result.planExpiresAt,
+      token: result.token,
+      role: result.role,
+    })
+    if (result.token) realtimeService.connect(result.token)
+    onLogin(resolvedPlanIds)
+  }
+
+  async function handleGoogleSignIn() {
+    setErrorMsg('')
+    setLoginState('idle')
+    setGoogleLoading(true)
+    try {
+      await loadGoogleIdentity()
+      startGoogleSignIn({
+        buttonHost: googleBtnRef.current,
+        onCredential: (idToken) => {
+          void completeGoogleSession(idToken)
+        },
+        onNeedButton: () => {
+          setShowGoogleButton(true)
+          setGoogleLoading(false)
+        },
+      })
+      window.setTimeout(() => setGoogleLoading(false), 12000)
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Não foi possível conectar com o Google.')
+      setLoginState('error')
+      setGoogleLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -314,10 +365,33 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
         <button
           type="submit"
           className="btn-login-enter"
-          disabled={loginState === 'loading'}
+          disabled={loginState === 'loading' || googleLoading}
         >
           {loginState === 'loading' ? <span className="login-spinner" /> : 'Entrar'}
         </button>
+
+        <div className="login-or">ou</div>
+
+        <button
+          type="button"
+          className="btn-login-google"
+          disabled={loginState === 'loading' || googleLoading}
+          onClick={() => void handleGoogleSignIn()}
+        >
+          {googleLoading ? (
+            <span className="login-spinner" />
+          ) : (
+            <>
+              <span className="btn-login-google-g">G</span>
+              Continuar com google
+            </>
+          )}
+        </button>
+        <div
+          ref={googleBtnRef}
+          id="google-signin-host"
+          className={`google-signin-host ${showGoogleButton ? 'google-signin-host-visible' : ''}`}
+        />
 
         <button
           type="button"

@@ -1130,6 +1130,67 @@
   opacity: 0.7;
 }
 
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #b0c9bf;
+  font-size: 0.78rem;
+  margin: 0.35rem 0;
+}
+
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #ece6d8;
+}
+
+.btn-login-google {
+  height: 50px;
+  border-radius: 14px;
+  border: none;
+  background: #ea4335;
+  color: #fff;
+  font-size: 0.98rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: inherit;
+}
+
+.btn-login-google:disabled {
+  opacity: 0.7;
+}
+
+.btn-login-google-g {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  color: #ea4335;
+  font-weight: 900;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.google-signin-host {
+  display: none;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+.google-signin-host-visible {
+  display: flex;
+}
+
 .login-forgot {
   text-align: center;
   font-size: 0.82rem;
