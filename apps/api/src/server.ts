@@ -6,7 +6,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import Stripe from 'stripe'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual, randomUUID } from 'node:crypto'
 import { resolve, extname, basename, join } from 'node:path'
 import {
   getCatalog,
@@ -106,6 +106,20 @@ const checkoutSchema = z.object({
   ),
   planId: z.enum(['nivel1', 'nivel2', 'nivel3']),
   fullName: z.string().min(2).max(100).optional(),
+})
+
+const registerFreeSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
+  fullName: z.string().min(2).max(100),
+  healthProfile: z.record(z.string(), z.unknown()).optional(),
+})
+
+const googleAuthSchema = z.object({
+  email: z.string().email(),
+  fullName: z.string().min(1).max(100),
+  googleId: z.string().min(1).optional(),
+  photoUrl: z.string().optional(),
 })
 
 const registerPostPaymentSchema = z.object({
@@ -550,7 +564,39 @@ app.post('/api/admin/logout', (req, res) => {
 
 // ── Catalog ────────────────────────────────────────────────
 app.get('/api/catalog/plans', (_req, res) => {
-  res.json({ plans: getCatalog() })
+  const allPlans = getCatalog()
+  const activePlans = allPlans
+    .filter((p) => p.id === 'nivel2' || p.id === 'nivel3')
+    .map((p) => {
+      if (p.id === 'nivel2') {
+        return {
+          ...p,
+          label: 'Nível 1 - Assinatura Mensal',
+          benefits: [
+            'MeuGuardião com até 50 mensagens diárias',
+            '70 receitas naturais e e-book',
+            'Bate-papo gratuito toda segunda-feira',
+            'Botão de WhatsApp para consultoria gratuita',
+          ],
+        }
+      }
+      if (p.id === 'nivel3') {
+        return {
+          ...p,
+          label: 'Nível 2 - Experiência Premium',
+          benefits: [
+            'MeuGuardião com até 100 mensagens diárias',
+            'Treinamento gratuito de até 30 minutos',
+            'Todos os benefícios do Nível 1',
+            'Grupos exclusivos no WhatsApp e Telegram',
+            'Atendimento por videoconferência sob agendamento',
+            'Acesso à fábrica com descontos e indicações da plataforma',
+          ],
+        }
+      }
+      return p
+    })
+  res.json({ plans: activePlans })
 })
 
 // ── Onboarding ─────────────────────────────────────────────
@@ -736,7 +782,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     const existing = await findByEmail(email)
     if (existing) {
-      res.status(409).json({ message: 'Esta conta já foi criada. Faça login para acessar.' })
+      res.status(409).json({ message: 'E-mail indisponível. Por favor, digite outro e-mail.' })
       return
     }
 
@@ -1125,6 +1171,42 @@ app.post('/api/ai/chat', async (req, res) => {
   try {
     const payload = chatSchema.parse(req.body)
 
+    // Check daily limit for user tier (5 for free, 50 for Nivel 1, 100 for Nivel 2)
+    if (payload.userId) {
+      const user = await findById(payload.userId)
+      if (user) {
+        const { dailyLimit, tierName, canUpgrade } = getUserDailyLimit(user.planIds)
+        const { query: dbQuery } = await import('./db.js')
+        const { rows } = await dbQuery<{ count: string }>(
+          `SELECT COUNT(*)::text as count
+           FROM chat_messages cm
+           JOIN chats c ON c.id = cm.chat_id
+           WHERE c.user_id = $1
+             AND cm.role = 'user'
+             AND cm.created_at >= CURRENT_DATE`,
+          [payload.userId],
+        )
+        const usedToday = parseInt(rows[0]?.count ?? '0', 10)
+        if (usedToday >= dailyLimit) {
+          let limitMsg = `Você atingiu o limite de ${dailyLimit} mensagens diárias do ${tierName}. Seu limite será renovado à meia-noite.`
+          if (canUpgrade) {
+            limitMsg += tierName === 'Gratuito'
+              ? ' Para ter até 50 ou 100 mensagens diárias, faça upgrade para o Nível 1 ou Nível 2!'
+              : ' Para ter até 100 mensagens diárias, faça upgrade para o Nível 2!'
+          }
+          res.status(403).json({
+            ok: false,
+            code: 'daily_limit_reached',
+            message: limitMsg,
+            dailyLimit,
+            tierName,
+            canUpgrade,
+          })
+          return
+        }
+      }
+    }
+
     // Extract the last user message to route knowledge selection
     const lastUserMessage = [...payload.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
     const knowledgeContent = selectRelevantFiles(lastUserMessage)
@@ -1328,6 +1410,156 @@ app.put('/api/admin/token-quota', requireAdminToken, async (req, res) => {
 })
 
 // ── Auth ───────────────────────────────────────────────────
+app.get('/api/auth/check-email', async (req, res) => {
+  try {
+    const email = String(req.query.email || '').toLowerCase().trim()
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ message: 'E-mail inválido.' })
+      return
+    }
+    const existing = await findByEmail(email)
+    res.json({ available: !existing })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao verificar disponibilidade do e-mail.' })
+  }
+})
+
+app.post('/api/auth/register-free', async (req, res) => {
+  try {
+    const { email, password, fullName, healthProfile } = registerFreeSchema.parse(req.body)
+    const normalizedEmail = email.toLowerCase().trim()
+    const existing = await findByEmail(normalizedEmail)
+    if (existing) {
+      res.status(409).json({ message: 'Esta conta já foi criada. Faça login para acessar.' })
+      return
+    }
+
+    const newUser = await upsertUser({
+      id: `u_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      email: normalizedEmail,
+      fullName: fullName.trim(),
+      password,
+      planIds: [],
+      healthProfile: healthProfile ?? {},
+      role: 'user',
+    })
+
+    const token = signUserToken({ sub: newUser.id, role: newUser.role, tokenVersion: newUser.tokenVersion })
+
+    res.status(201).json({
+      ok: true,
+      userId: newUser.id,
+      email: newUser.email,
+      fullName: newUser.fullName,
+      photoUrl: newUser.photoUrl ?? '',
+      planIds: newUser.planIds,
+      planExpiresAt: {},
+      planCancelledAt: {},
+      healthProfile: newUser.healthProfile ?? {},
+      role: newUser.role,
+      token,
+    })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao criar conta gratuita.' })
+  }
+})
+
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { email, fullName, photoUrl } = googleAuthSchema.parse(req.body)
+    const normalizedEmail = email.toLowerCase().trim()
+    let user = await findByEmail(normalizedEmail)
+    let isNewUser = false
+
+    if (!user) {
+      isNewUser = true
+      user = await upsertUser({
+        id: `g_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        email: normalizedEmail,
+        fullName: fullName.trim(),
+        photoUrl: photoUrl || '',
+        password: randomBytes(32).toString('hex'),
+        planIds: [],
+        role: 'user',
+      })
+    }
+
+    const token = signUserToken({ sub: user.id, role: user.role, tokenVersion: user.tokenVersion })
+
+    res.json({
+      ok: true,
+      isNewUser,
+      userId: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      photoUrl: user.photoUrl ?? '',
+      planIds: user.planIds,
+      planExpiresAt: {},
+      planCancelledAt: {},
+      healthProfile: user.healthProfile ?? {},
+      role: user.role,
+      token,
+    })
+  } catch (error) {
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Falha na autenticação via Google.' })
+  }
+})
+
+
+function getUserDailyLimit(planIds?: string[]): { dailyLimit: number; tierName: string; canUpgrade: boolean } {
+  const ids = planIds ?? []
+  if (ids.includes('nivel3')) {
+    return { dailyLimit: 100, tierName: 'Nível 2', canUpgrade: false }
+  }
+  if (ids.includes('nivel2') || ids.includes('nivel1')) {
+    return { dailyLimit: 50, tierName: 'Nível 1', canUpgrade: true }
+  }
+  return { dailyLimit: 5, tierName: 'Gratuito', canUpgrade: true }
+}
+
+app.get('/api/guardiao/remaining-time', async (req, res) => {
+  try {
+    const userId = String(req.query.userId ?? '')
+    if (!userId) {
+      res.status(400).json({ message: 'userId obrigatório.' })
+      return
+    }
+    const user = await findById(userId)
+    if (!user) {
+      res.status(404).json({ message: 'Usuário não encontrado.' })
+      return
+    }
+
+    const { dailyLimit, tierName, canUpgrade } = getUserDailyLimit(user.planIds)
+
+    const { query: dbQuery } = await import('./db.js')
+    const { rows } = await dbQuery<{ count: string }>(
+      `SELECT COUNT(*)::text as count
+       FROM chat_messages cm
+       JOIN chats c ON c.id = cm.chat_id
+       WHERE c.user_id = $1
+         AND cm.role = 'user'
+         AND cm.created_at >= CURRENT_DATE`,
+      [userId],
+    )
+    const usedToday = parseInt(rows[0]?.count ?? '0', 10)
+    const remainingToday = Math.max(0, dailyLimit - usedToday)
+
+    res.json({
+      unlimited: false,
+      isFreeTier: tierName === 'Gratuito',
+      tierName,
+      dailyLimit,
+      usedToday,
+      remainingToday,
+      expired: remainingToday <= 0,
+      canUpgrade,
+    })
+  } catch (error) {
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao consultar limite do Guardião.' })
+  }
+})
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body)
@@ -1348,6 +1580,7 @@ app.post('/api/auth/login', async (req, res) => {
       photoUrl: user.photoUrl ?? '',
       planIds: user.planIds,
       planExpiresAt: user.planExpiresAt ?? {},
+      planCancelledAt: user.planCancelledAt ?? {},
       healthProfile: user.healthProfile ?? {},
       role: user.role,
       token,
@@ -2045,6 +2278,7 @@ app.get(['/api/user/me', '/api/auth/me'], async (req, res) => {
       photoUrl: row.photo_url ?? '',
       planIds: row.plan_ids ?? [],
       planExpiresAt: row.plan_expires_at ?? {},
+      planCancelledAt: row.plan_cancelled_at ?? {},
       healthProfile: (row as Record<string, unknown>).health_profile ?? null,
       personSummary: (row as Record<string, unknown>).person_summary ?? '',
     })

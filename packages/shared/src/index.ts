@@ -89,7 +89,7 @@ export const plans: PlanDefinition[] = [
     billingInterval: 'monthly',
     description: 'Assinatura recorrente para uso contínuo dos recursos de rotina.',
     benefits: [
-      'MeuGuardião com liberação total',
+      'MeuGuardião com até 50 mensagens diárias',
       '70 receitas naturais e e-book',
       'Bate-papo gratuito toda segunda-feira',
       'Botão de WhatsApp para consultoria gratuita',
@@ -100,11 +100,12 @@ export const plans: PlanDefinition[] = [
   },
   {
     id: 'nivel3',
-    label: 'Experiência premium - Nível 3',
+    label: 'Nível 2 - Experiência Premium',
     priceInCents: 7990,
     billingInterval: 'monthly',
     description: 'Plano premium com consultoria e grupos exclusivos.',
     benefits: [
+      'MeuGuardião com até 100 mensagens diárias',
       'Treinamento gratuito de até 30 minutos',
       'Todos os benefícios dos níveis 1 e 2',
       'Grupos exclusivos no WhatsApp e Telegram',
