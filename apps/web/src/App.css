@@ -2078,6 +2078,37 @@
   padding: 0 0.25rem;
 }
 
+.chat-toolbar-peer {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-toolbar-peer-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.chat-toolbar-peer-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #213830;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-toolbar-peer-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: #22c55e;
+  line-height: 1.2;
+}
+
 .chat-toolbar-btn {
   display: flex;
   align-items: center;
@@ -3139,7 +3170,25 @@
   font-size: 1rem;
 }
 
+.consultor-avatar-wrap.sm {
+  width: 36px;
+  height: 36px;
+  margin-right: 0.5rem;
+}
+
+.consultor-avatar-wrap.sm .consultor-avatar-img,
+.consultor-avatar-wrap.sm .consultor-avatar-fallback {
+  width: 36px;
+  height: 36px;
+  font-size: 0.85rem;
+}
+
 .consultor-status-dot {
+  display: none;
+}
+
+.consultor-status-dot.online {
+  display: block;
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -3147,11 +3196,7 @@
   height: 12px;
   border-radius: 50%;
   border: 2px solid #fff;
-  background: #8fad9c;
-}
-
-.consultor-status-dot.online {
-  background: #2e7d5e;
+  background: #22c55e;
 }
 
 .consultor-list-trailing {

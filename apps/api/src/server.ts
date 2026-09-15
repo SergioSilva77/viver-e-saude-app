@@ -1781,7 +1781,12 @@ app.post('/api/conversations', requireAuth, async (req, res) => {
     }
     const [userId, consultantId] = self.role === 'consultant' ? [peer.id, self.id] : [self.id, peer.id]
     const conversation = await getOrCreateConversation(userId, consultantId)
-    res.status(201).json({ conversation })
+    res.status(201).json({
+      conversation: {
+        ...conversation,
+        peerStatus: livePresenceStatus(conversation.peerId),
+      },
+    })
   } catch (error) {
     res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao criar conversa.' })
   }

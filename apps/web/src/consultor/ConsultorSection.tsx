@@ -30,6 +30,10 @@ function timeLabel(iso: string | null): string {
     : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
+function isLiveOnline(status: string | null | undefined): boolean {
+  return status === 'online' || status === 'in_call'
+}
+
 export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -157,7 +161,7 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                   ) : (
                     <div className="consultor-avatar-fallback">{(c.peerName || '?').charAt(0).toUpperCase()}</div>
                   )}
-                  {(c.peerStatus === 'online' || c.peerStatus === 'in_call') && (
+                  {isLiveOnline(c.peerStatus) && (
                     <span className="consultor-status-dot online" />
                   )}
                 </div>
@@ -235,7 +239,7 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                           ) : (
                             <div className="consultor-avatar-fallback">{c.fullName.charAt(0).toUpperCase()}</div>
                           )}
-                          {(c.status === 'online' || c.status === 'in_call') && (
+                          {isLiveOnline(c.status) && (
                             <span className="consultor-status-dot online" />
                           )}
                         </div>
@@ -292,10 +296,12 @@ function ChatThread({
   const [loading, setLoading] = useState(true)
   const [appointmentsOpen, setAppointmentsOpen] = useState(false)
   const [callHint, setCallHint] = useState<string | null>(null)
+  const [peerStatus, setPeerStatus] = useState(conversation.peerStatus)
   const bottomRef = useRef<HTMLDivElement>(null)
   const rank = planRank(planIds)
   const canVoice = role === 'consultant' || rank >= 2
   const canVideo = role === 'consultant' || rank >= 3
+  const peerOnline = isLiveOnline(peerStatus)
 
   function onCallPressed(callType: 'voice' | 'video') {
     if (role === 'consultant') {
@@ -330,6 +336,7 @@ function ChatThread({
 
   useEffect(() => {
     let active = true
+    setPeerStatus(conversation.peerStatus)
     fetchMessages(token, conversation.id).then((list) => {
       if (!active) return
       setMessages(list)
@@ -362,6 +369,9 @@ function ChatThread({
         const ids = new Set((msg.messageIds as string[]) ?? [])
         const status = msg.status as MessageDeliveryStatus
         setMessages((prev) => prev.map((m) => (ids.has(m.id) ? { ...m, status } : m)))
+      }
+      if (msg.type === 'presence' && msg.userId === conversation.peerId) {
+        setPeerStatus(String(msg.status))
       }
     })
     return () => { active = false; unsubscribe() }
@@ -398,14 +408,24 @@ function ChatThread({
         <button type="button" className="chat-toolbar-btn" onClick={onBack} aria-label="Voltar">
           <i className="bi bi-arrow-left" />
         </button>
-        <span className="chat-toolbar-title">
-          {conversation.peerName || 'Usuário'}
-          {(conversation.peerStatus === 'online' || conversation.peerStatus === 'in_call') && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: '#2e7d5e' }}>
-              {conversation.peerStatus === 'in_call' ? '● em chamada' : '● online'}
-            </span>
-          )}
-        </span>
+        <div className="chat-toolbar-peer">
+          <div className="consultor-avatar-wrap sm">
+            {conversation.peerPhotoUrl ? (
+              <img src={conversation.peerPhotoUrl} alt={conversation.peerName} className="consultor-avatar-img" />
+            ) : (
+              <div className="consultor-avatar-fallback">{(conversation.peerName || '?').charAt(0).toUpperCase()}</div>
+            )}
+            {peerOnline && <span className="consultor-status-dot online" />}
+          </div>
+          <div className="chat-toolbar-peer-text">
+            <span className="chat-toolbar-peer-name">{conversation.peerName || 'Usuário'}</span>
+            {peerOnline && (
+              <span className="chat-toolbar-peer-status">
+                {peerStatus === 'in_call' ? 'em chamada' : 'online'}
+              </span>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           className="chat-toolbar-btn chat-toolbar-btn-new"
