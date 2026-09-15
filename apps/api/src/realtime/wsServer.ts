@@ -324,24 +324,6 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
     console.error('[WS] Falha ao zerar presença dos consultores no boot:', err)
   })
 
-  const heartbeatMs = 25_000
-  const heartbeat = setInterval(() => {
-    for (const ws of wss.clients) {
-      const alive = (ws as WebSocket & { isAlive?: boolean }).isAlive
-      if (alive === false) {
-        ws.terminate()
-        continue
-      }
-      ;(ws as WebSocket & { isAlive?: boolean }).isAlive = false
-      try {
-        ws.ping()
-      } catch {
-        ws.terminate()
-      }
-    }
-  }, heartbeatMs)
-  wss.on('close', () => clearInterval(heartbeat))
-
   wss.on('connection', async (ws, req) => {
     // Pausa o processamento de frames entrantes até terminarmos a autenticação
     // (assíncrona) e registrarmos os listeners — sem isso, uma mensagem enviada
@@ -367,10 +349,6 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
       const socket: ConnectedSocket = { ws, userId: user.id, role: payload.role }
       if (!connections.has(user.id)) connections.set(user.id, new Set())
       connections.get(user.id)!.add(socket)
-      ;(ws as WebSocket & { isAlive?: boolean }).isAlive = true
-      ws.on('pong', () => {
-        ;(ws as WebSocket & { isAlive?: boolean }).isAlive = true
-      })
 
       console.log(`[WS] Conectado: userId=${user.id} role=${payload.role} (total ${connections.get(user.id)!.size} conexões)`)
 
@@ -677,6 +655,17 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
       // que possam ter chegado durante a autenticação, e então avisa o cliente.
       ws.resume()
       send(ws, { type: 'connected', userId: user.id, role: payload.role })
+      for (const onlineId of listOnlineUserIds()) {
+        if (onlineId === user.id) continue
+        const peer = connections.get(onlineId)?.values().next().value as ConnectedSocket | undefined
+        if (!peer) continue
+        send(ws, {
+          type: 'presence',
+          userId: onlineId,
+          role: peer.role,
+          status: livePresenceStatus(onlineId),
+        })
+      }
     } catch (err) {
       console.error('[WS] Falha ao autenticar conexão:', err instanceof Error ? err.message : err)
       ws.close(4001, 'Falha de autenticação')
