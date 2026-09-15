@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   description VARCHAR DEFAULT '',
   content TEXT NOT NULL,
   audience JSONB DEFAULT '[]',
+  category VARCHAR NOT NULL DEFAULT 'Receitas',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );

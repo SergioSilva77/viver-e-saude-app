@@ -386,6 +386,55 @@
   padding: 1.5rem 0;
 }
 
+.filter-chips {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+  margin: -0.25rem 0 0.15rem;
+  scrollbar-width: none;
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+
+.filter-chip {
+  flex-shrink: 0;
+  border: 1.5px solid #dbe3da;
+  background: #fff;
+  color: #3d6153;
+  border-radius: 999px;
+  padding: 0.32rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.filter-chip.active {
+  background: #5a8672;
+  border-color: #5a8672;
+  color: #fff;
+}
+
+.community-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.community-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #213830;
+}
+
+.ebook-card {
+  border: 1.5px solid #5a8672;
+  background: #f3f8f5;
+}
+
 /* ── Recipe Detail ───────────────────────────────────────── */
 .recipe-detail {
   display: flex;

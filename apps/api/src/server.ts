@@ -459,6 +459,7 @@ async function runMigrations(): Promise<void> {
     },
     { label: 'idx_appointments_user_id', sql: 'CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments(user_id)' },
     { label: 'idx_appointments_consultant_id', sql: 'CREATE INDEX IF NOT EXISTS idx_appointments_consultant_id ON appointments(consultant_id)' },
+    { label: 'recipes category column', sql: "ALTER TABLE recipes ADD COLUMN IF NOT EXISTS category VARCHAR NOT NULL DEFAULT 'Receitas'" },
   ]
 
   for (const step of steps) {
@@ -886,6 +887,7 @@ const recipeSchema = z.object({
   description: z.string().max(400).default(''),
   content: z.string().min(1),
   audience: z.array(z.string()).default([]),
+  category: z.string().min(1).max(40).default('Receitas'),
 })
 
 app.get('/api/admin/recipes', requireAdminToken, async (_req, res) => {
@@ -916,7 +918,7 @@ app.get('/api/community-links', async (_req, res) => {
 const communityLinkSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(120),
-  platform: z.enum(['whatsapp', 'telegram', 'youtube', 'discord', 'other']),
+  platform: z.enum(['whatsapp', 'telegram', 'instagram', 'youtube', 'discord', 'other']),
   audience: z.array(z.string()).default([]),
   href: z.string().url(),
 })

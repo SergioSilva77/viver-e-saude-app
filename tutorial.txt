@@ -62,7 +62,7 @@ Crie os arquivos .env em cada pasta de app:
   --- apps/api/.env ---
   PORT=4000
   DATABASE_URL=postgres://postgres:postgres@localhost:5432/viversaude
-  ADMIN_EMAIL=admin@viveresaude.com
+  ADMIN_EMAIL=gilsonperito18@gmail.com
   ADMIN_PASSWORD="troque-por-uma-senha-forte"
   (ATENÇÃO: se a senha tiver #, ela DEVE estar entre aspas duplas —
    o dotenv corta o valor no # sem aspas! Ex: ADMIN_PASSWORD="abc#123")
@@ -129,7 +129,7 @@ Crie os arquivos .env em cada pasta de app:
 Para ativar o chat com IA:
 
   1. Acesse o painel admin: http://localhost:5174
-  2. Login: admin@viversaude.com / admin123456
+  2. Login: gilsonperito18@gmail.com / admin123456
   3. Vá em "Inteligência Artificial"
   4. Escolha um provedor:
      - Anthropic Claude (precisa de chave API)
@@ -255,7 +255,7 @@ Para ativar o chat com IA:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Admin panel (login validado no backend — sessão de 8h):
-    Email:    admin@viveresaude.com
+    Email:    gilsonperito18@gmail.com
     Senha:    a definida em ADMIN_PASSWORD no apps/api/.env
 
   Banco de dados:

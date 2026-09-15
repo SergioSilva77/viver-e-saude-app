@@ -53,10 +53,10 @@ import {
   type PlanId,
 } from '@viver-saude/shared'
 
-type CommunityPlatform = 'whatsapp' | 'telegram' | 'youtube' | 'discord' | 'other'
+type CommunityPlatform = 'whatsapp' | 'telegram' | 'instagram' | 'youtube' | 'discord' | 'other'
 interface CommunityLink { id: string; title: string; platform: CommunityPlatform; audience: string[]; href: string }
 
-interface RecipeMeta { id: string; title: string; description: string; audience: string[]; updatedAt: string }
+interface RecipeMeta { id: string; title: string; description: string; audience: string[]; category?: string; updatedAt: string }
 interface RecipeFull extends RecipeMeta { content: string }
 import { LoginScreen } from './auth/LoginScreen'
 import { RegisterScreen } from './auth/RegisterScreen'
@@ -83,6 +83,7 @@ const planIconClass = ['n1', 'n2', 'n3']
 const PLATFORM_ICON: Record<CommunityPlatform, string> = {
   whatsapp: 'bi-whatsapp',
   telegram: 'bi-telegram',
+  instagram: 'bi-instagram',
   youtube: 'bi-youtube',
   discord: 'bi-discord',
   other: 'bi-link-45deg',
@@ -90,10 +91,18 @@ const PLATFORM_ICON: Record<CommunityPlatform, string> = {
 const PLATFORM_LABEL: Record<CommunityPlatform, string> = {
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
+  instagram: 'Instagram',
   youtube: 'YouTube',
   discord: 'Discord',
   other: 'Link',
 }
+const PLATFORM_ORDER: CommunityPlatform[] = ['whatsapp', 'telegram', 'instagram', 'youtube', 'discord', 'other']
+const LEVEL_FILTERS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'nivel1', label: 'Nível 1' },
+  { id: 'nivel2', label: 'Nível 2' },
+  { id: 'nivel3', label: 'Nível 3' },
+]
 
 /**
  * Plan hierarchy: a higher tier covers lower tiers.
@@ -113,6 +122,44 @@ function expandPlanHierarchy(activePlans: PlanId[]): Set<PlanId> {
     }
   }
   return expanded
+}
+
+function planRankOf(ids: string[]): number {
+  if (ids.includes('nivel3')) return 3
+  if (ids.includes('nivel2')) return 2
+  if (ids.includes('nivel1')) return 1
+  return 0
+}
+
+function matchesLevel(audience: string[], level: string): boolean {
+  if (level === 'all') return true
+  if (audience.length === 0) return true
+  return audience.includes(level)
+}
+
+function ChipRow({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ id: string; label: string }>
+  value: string
+  onChange: (id: string) => void
+}) {
+  return (
+    <div className="filter-chips">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          className={`filter-chip${value === option.id ? ' active' : ''}`}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -488,6 +535,10 @@ function App() {
   const [recipesMeta, setRecipesMeta] = useState<RecipeMeta[]>([])
   const [selectedRecipe, setSelectedRecipe] = useState<RecipeFull | null>(null)
   const [recipeLoading, setRecipeLoading] = useState(false)
+  const [recipeLevelFilter, setRecipeLevelFilter] = useState('all')
+  const [recipeCategoryFilter, setRecipeCategoryFilter] = useState('all')
+  const [communityLevelFilter, setCommunityLevelFilter] = useState('all')
+  const [communityPlatformFilter, setCommunityPlatformFilter] = useState('all')
 
   // Pre-flight check Stripe availability once on mount.
   // This is a defense layer — disables Assinar buttons if the backend reports Stripe is not configured.
@@ -1042,9 +1093,15 @@ function App() {
             />
           ) : (() => {
             const expanded = expandPlanHierarchy(activePlans)
-            const visibleRecipes = recipesMeta.filter(
+            const byPlan = recipesMeta.filter(
               (r) => r.audience.length === 0 || r.audience.some((a) => expanded.has(a as PlanId)),
             )
+            const categories = Array.from(new Set(byPlan.map((r) => r.category?.trim() || 'Receitas'))).sort()
+            const visibleRecipes = byPlan.filter((r) => {
+              if (!matchesLevel(r.audience, recipeLevelFilter)) return false
+              if (recipeCategoryFilter !== 'all' && (r.category?.trim() || 'Receitas') !== recipeCategoryFilter) return false
+              return true
+            })
             async function openRecipe(id: string) {
               setRecipeLoading(true)
               try {
@@ -1055,15 +1112,40 @@ function App() {
                 setRecipeLoading(false)
               }
             }
+            const canDownloadEbook = planRankOf(activePlans) >= 2
             return (
               <>
                 <div>
                   <h2 className="section-title">Receitas</h2>
                   <p className="section-sub">Protocolos e e-books naturais</p>
                 </div>
+                <ChipRow options={LEVEL_FILTERS} value={recipeLevelFilter} onChange={setRecipeLevelFilter} />
+                {categories.length > 0 && (
+                  <ChipRow
+                    options={[{ id: 'all', label: 'Todas' }, ...categories.map((c) => ({ id: c, label: c }))]}
+                    value={recipeCategoryFilter}
+                    onChange={setRecipeCategoryFilter}
+                  />
+                )}
                 <div className="cards-list">
+                  {canDownloadEbook && (
+                    <a
+                      href="/downloads/receitas-e-dicas.pdf"
+                      className="content-card ebook-card"
+                      download="Receitas e dicas.pdf"
+                    >
+                      <div className="content-card-icon">
+                        <i className="bi bi-file-earmark-pdf"></i>
+                      </div>
+                      <div className="content-card-body">
+                        <div className="content-card-title">E-book Receitas e dicas</div>
+                        <div className="content-card-sub">PDF exclusivo para Nível 2+</div>
+                      </div>
+                      <i className="bi bi-download content-card-arrow"></i>
+                    </a>
+                  )}
                   {visibleRecipes.length === 0 && (
-                    <p className="community-empty">Nenhuma receita disponível para o seu plano no momento.</p>
+                    <p className="community-empty">Nenhuma receita disponível para o filtro selecionado.</p>
                   )}
                   {recipeLoading && <p className="community-empty">Carregando…</p>}
                   {visibleRecipes.map((recipe) => (
@@ -1078,9 +1160,9 @@ function App() {
                       </div>
                       <div className="content-card-body">
                         <div className="content-card-title">{recipe.title}</div>
-                        {recipe.description && (
-                          <div className="content-card-sub">{recipe.description}</div>
-                        )}
+                        <div className="content-card-sub">
+                          {[recipe.category || 'Receitas', recipe.description].filter(Boolean).join(' · ')}
+                        </div>
                       </div>
                       <i className="bi bi-chevron-right content-card-arrow"></i>
                     </button>
@@ -1099,38 +1181,65 @@ function App() {
             </LockedSection>
           ) : (() => {
             const expanded = expandPlanHierarchy(activePlans)
-            const visibleLinks = communityLinks.filter(
+            const byPlan = communityLinks.filter(
               (link) => link.audience.length === 0 || link.audience.some((a) => expanded.has(a as PlanId)),
             )
+            const visibleLinks = byPlan.filter((link) => {
+              if (!matchesLevel(link.audience, communityLevelFilter)) return false
+              if (communityPlatformFilter !== 'all' && link.platform !== communityPlatformFilter) return false
+              return true
+            })
+            const presentPlatforms = PLATFORM_ORDER.filter((p) => visibleLinks.some((l) => l.platform === p))
+            const platformOptions = [
+              { id: 'all', label: 'Todos' },
+              ...PLATFORM_ORDER
+                .filter((p) => byPlan.some((l) => l.platform === p))
+                .map((p) => ({ id: p, label: PLATFORM_LABEL[p] })),
+            ]
             return (
               <>
                 <div>
                   <h2 className="section-title">Comunidade</h2>
-                  <p className="section-sub">Grupos exclusivos por plano</p>
+                  <p className="section-sub">Grupos exclusivos por plano e plataforma</p>
                 </div>
-                <div className="cards-list">
-                  {visibleLinks.length === 0 && (
-                    <p className="community-empty">Nenhum grupo disponível para o seu plano no momento.</p>
-                  )}
-                  {visibleLinks.map((link) => (
-                    <a
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="content-card"
-                      key={link.id}
-                    >
-                      <div className="content-card-icon">
-                        <i className={`bi ${PLATFORM_ICON[link.platform] ?? 'bi-link-45deg'}`}></i>
+                <ChipRow options={LEVEL_FILTERS} value={communityLevelFilter} onChange={setCommunityLevelFilter} />
+                <ChipRow options={platformOptions} value={communityPlatformFilter} onChange={setCommunityPlatformFilter} />
+                {visibleLinks.length === 0 ? (
+                  <p className="community-empty">Nenhum grupo disponível para o filtro selecionado.</p>
+                ) : (
+                  presentPlatforms.map((platform) => {
+                    const group = visibleLinks.filter((l) => l.platform === platform)
+                    if (group.length === 0) return null
+                    return (
+                      <div key={platform} className="community-group">
+                        <h3 className="community-group-title">
+                          <i className={`bi ${PLATFORM_ICON[platform]}`} />
+                          {PLATFORM_LABEL[platform]}
+                        </h3>
+                        <div className="cards-list">
+                          {group.map((link) => (
+                            <a
+                              href={link.href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="content-card"
+                              key={link.id}
+                            >
+                              <div className="content-card-icon">
+                                <i className={`bi ${PLATFORM_ICON[link.platform] ?? 'bi-link-45deg'}`}></i>
+                              </div>
+                              <div className="content-card-body">
+                                <div className="content-card-title">{link.title}</div>
+                                <div className="content-card-sub">{PLATFORM_LABEL[link.platform] ?? link.platform}</div>
+                              </div>
+                              <i className="bi bi-chevron-right content-card-arrow"></i>
+                            </a>
+                          ))}
+                        </div>
                       </div>
-                      <div className="content-card-body">
-                        <div className="content-card-title">{link.title}</div>
-                        <div className="content-card-sub">{PLATFORM_LABEL[link.platform] ?? link.platform}</div>
-                      </div>
-                      <i className="bi bi-chevron-right content-card-arrow"></i>
-                    </a>
-                  ))}
-                </div>
+                    )
+                  })
+                )}
               </>
             )
           })()

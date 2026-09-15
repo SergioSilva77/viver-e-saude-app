@@ -23,7 +23,7 @@ export interface NavItem {
 export interface CommunityLink {
   id: string
   title: string
-  platform: 'whatsapp' | 'telegram'
+  platform: 'whatsapp' | 'telegram' | 'instagram' | 'youtube' | 'discord' | 'other'
   audience: PlanId[]
   href: string
 }

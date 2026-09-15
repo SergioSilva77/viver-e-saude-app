@@ -2,7 +2,7 @@ import { query } from './db.js'
 
 // ── Types ──────────────────────────────────────────────────
 
-export type CommunityPlatform = 'whatsapp' | 'telegram' | 'youtube' | 'discord' | 'other'
+export type CommunityPlatform = 'whatsapp' | 'telegram' | 'instagram' | 'youtube' | 'discord' | 'other'
 
 export interface CommunityLink {
   id: string

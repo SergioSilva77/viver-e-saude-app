@@ -8,6 +8,7 @@ interface Recipe {
   description: string
   content: string
   audience: string[]
+  category: string
   createdAt: string
   updatedAt: string
 }
@@ -28,12 +29,15 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
+const RECIPE_CATEGORIES = ['Receitas', 'Sucos', 'Chás', 'Refeições', 'Protocolos', 'Dicas', 'Sobremesas']
+
 const emptyForm = {
   id: '',
   title: '',
   description: '',
   content: '',
   audience: [] as string[],
+  category: 'Receitas',
 }
 
 // Simple markdown preview (bold, italic, headings, lists, line breaks)
@@ -111,6 +115,7 @@ export function RecipesPage({ adminToken }: Props) {
       description: recipe.description,
       content: recipe.content,
       audience: recipe.audience,
+      category: recipe.category || 'Receitas',
     })
     setEditingId(recipe.id)
     setSaveError(null)
@@ -176,6 +181,18 @@ export function RecipesPage({ adminToken }: Props) {
         <form onSubmit={handleSave} className="recipes-editor-form">
           {/* Metadata row */}
           <div className="recipes-meta-row">
+            <label className="comm-label" style={{ flex: 2 }}>
+              Categoria
+              <select
+                className="comm-input"
+                value={form.category}
+                onChange={(e) => setForm({ category: e.target.value })}
+              >
+                {RECIPE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
             <label className="comm-label" style={{ flex: 2 }}>
               Título
               <input
@@ -312,6 +329,9 @@ export function RecipesPage({ adminToken }: Props) {
                   <div className="comm-audience-label">{recipe.description}</div>
                 )}
                 <div className="comm-card-meta" style={{ marginTop: '0.25rem' }}>
+                  <span className="comm-platform-badge">
+                    {recipe.category || 'Receitas'}
+                  </span>
                   <span className="comm-platform-badge">
                     {recipe.audience.length === 0
                       ? 'Todos os planos'

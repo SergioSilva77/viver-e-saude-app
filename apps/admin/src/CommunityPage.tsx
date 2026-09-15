@@ -8,7 +8,7 @@ function generateId(): string {
 
 // ── Types ──────────────────────────────────────────────────
 
-type Platform = 'whatsapp' | 'telegram' | 'youtube' | 'discord' | 'other'
+type Platform = 'whatsapp' | 'telegram' | 'instagram' | 'youtube' | 'discord' | 'other'
 
 interface CommunityLink {
   id: string
@@ -34,6 +34,7 @@ const PLANS = [
 const PLATFORM_ICONS: Record<Platform, string> = {
   whatsapp: 'bi-whatsapp',
   telegram: 'bi-telegram',
+  instagram: 'bi-instagram',
   youtube: 'bi-youtube',
   discord: 'bi-discord',
   other: 'bi-link-45deg',
@@ -42,6 +43,7 @@ const PLATFORM_ICONS: Record<Platform, string> = {
 const PLATFORM_COLORS: Record<Platform, string> = {
   whatsapp: '#25D366',
   telegram: '#229ED9',
+  instagram: '#E4405F',
   youtube: '#FF0000',
   discord: '#5865F2',
   other: '#6c757d',
@@ -50,6 +52,7 @@ const PLATFORM_COLORS: Record<Platform, string> = {
 const PLATFORM_LABELS: Record<Platform, string> = {
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
+  instagram: 'Instagram',
   youtube: 'YouTube',
   discord: 'Discord',
   other: 'Outro',
