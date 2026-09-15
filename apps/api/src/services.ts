@@ -2,7 +2,7 @@ import Stripe from 'stripe'
 import { getPlan, plans, type PlanId } from '@viver-saude/shared'
 
 import { config, getStripeConfig, hasStripeConfig } from './config.js'
-import { findByEmail, upsertUser, listUsers } from './userStore.js'
+import { findByEmail, findById, upsertUser, listUsers } from './userStore.js'
 import { sendRegistrationLink } from './emailService.js'
 
 type RegisterIntentInput = {
@@ -177,40 +177,61 @@ export async function applyWebhookSubscriptionDeleted(subscription: Stripe.Subsc
 }
 
 /**
- * Cancels a Stripe subscription at period end.
- * Returns the period end date so the frontend can display it.
+ * Cancels a plan. Stripe subscriptions stop at period end.
+ * Admin/manual grants without Stripe are cancelled locally (keep until expiry, or drop now).
  */
-export async function cancelSubscriptionAtPeriodEnd(userId: string, planId: string): Promise<{ cancelAt: string }> {
-  const users = await listUsers()
-  const user = users.find((u) => u.id === userId)
+export async function cancelSubscriptionAtPeriodEnd(
+  userId: string,
+  planId: string,
+): Promise<{ cancelAt: string; immediate?: boolean }> {
+  const user = await findById(userId)
 
   if (!user) throw new Error('Usuário não encontrado.')
-
-  const subscriptionId = user.subscriptionIds?.[planId]
-  if (!subscriptionId) {
-    throw new Error(
-      'Este plano não possui assinatura recorrente no Stripe. ' +
-      'Se foi criado manualmente, remova o acesso pelo painel administrativo.'
-    )
+  if (!user.planIds.includes(planId)) {
+    throw new Error('Este plano não está ativo na sua conta.')
   }
 
-  const stripe = getStripeClient()
-  await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true })
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const subscriptionId = user.subscriptionIds?.[planId]
+  if (subscriptionId) {
+    if (!hasStripeConfig()) {
+      throw new Error('O Stripe ainda não está configurado.')
+    }
+    const stripe = getStripeClient()
+    await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true })
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId)
 
-  const periodEnd = (subscription as unknown as { current_period_end?: number }).current_period_end
-    ?? subscription.items?.data?.[0]?.current_period_end
-    ?? Math.floor(Date.now() / 1000) + 30 * 86400
+    const periodEnd = (subscription as unknown as { current_period_end?: number }).current_period_end
+      ?? subscription.items?.data?.[0]?.current_period_end
+      ?? Math.floor(Date.now() / 1000) + 30 * 86400
 
-  const cancelAt = new Date(periodEnd * 1000).toISOString()
+    const cancelAt = new Date(periodEnd * 1000).toISOString()
+
+    await upsertUser({
+      id: user.id,
+      email: user.email,
+      planCancelledAt: { [planId]: cancelAt },
+    })
+
+    return { cancelAt }
+  }
+
+  const expiresIso = user.planExpiresAt?.[planId]
+  const expiresMs = expiresIso ? Date.parse(expiresIso) : Number.NaN
+  if (expiresIso && Number.isFinite(expiresMs) && expiresMs > Date.now()) {
+    await upsertUser({
+      id: user.id,
+      email: user.email,
+      planCancelledAt: { [planId]: expiresIso },
+    })
+    return { cancelAt: expiresIso }
+  }
 
   await upsertUser({
     id: user.id,
     email: user.email,
-    planCancelledAt: { [planId]: cancelAt },
+    planIds: user.planIds.filter((id) => id !== planId),
   })
-
-  return { cancelAt }
+  return { cancelAt: new Date().toISOString(), immediate: true }
 }
 
 export function getCatalog() {

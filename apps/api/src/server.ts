@@ -850,11 +850,6 @@ app.post('/api/auth/register', async (req, res) => {
 })
 
 app.post('/api/billing/cancel-subscription', async (req, res) => {
-  if (!hasStripeConfig()) {
-    res.status(503).json({ ok: false, message: 'O Stripe ainda não está configurado.' })
-    return
-  }
-
   const { userId, planId } = req.body as { userId?: string; planId?: string }
 
   if (!userId || !planId) {
@@ -864,7 +859,7 @@ app.post('/api/billing/cancel-subscription', async (req, res) => {
 
   try {
     const result = await cancelSubscriptionAtPeriodEnd(userId, planId)
-    res.json({ ok: true, cancelAt: result.cancelAt })
+    res.json({ ok: true, cancelAt: result.cancelAt, immediate: result.immediate === true })
   } catch (error) {
     res.status(400).json({ ok: false, message: error instanceof Error ? error.message : 'Falha ao cancelar assinatura.' })
   }
