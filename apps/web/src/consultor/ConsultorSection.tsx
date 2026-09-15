@@ -63,9 +63,11 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
         loadConversations()
       }
       if (msg.type === 'presence') {
+        const status = String(msg.status)
         setConversations((prev) =>
-          prev.map((c) => (c.peerId === msg.userId ? { ...c, peerStatus: String(msg.status) } : c)),
+          prev.map((c) => (c.peerId === msg.userId ? { ...c, peerStatus: status } : c)),
         )
+        setSelected((cur) => (cur && cur.peerId === msg.userId ? { ...cur, peerStatus: status } : cur))
       }
     })
     return () => { active = false; unsubscribe() }
@@ -155,9 +157,7 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                   ) : (
                     <div className="consultor-avatar-fallback">{(c.peerName || '?').charAt(0).toUpperCase()}</div>
                   )}
-                  {c.peerRole === 'consultant' && (
-                    <span className={`consultor-status-dot ${c.peerStatus === 'online' ? 'online' : 'offline'}`} />
-                  )}
+                  <span className={`consultor-status-dot ${c.peerStatus === 'online' || c.peerStatus === 'in_call' ? 'online' : 'offline'}`} />
                 </div>
                 <div className="chat-list-item-info">
                   <span className="chat-list-item-title">{c.peerName || 'Usuário'}</span>
@@ -233,7 +233,7 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                           ) : (
                             <div className="consultor-avatar-fallback">{c.fullName.charAt(0).toUpperCase()}</div>
                           )}
-                          <span className={`consultor-status-dot ${c.status === 'online' ? 'online' : 'offline'}`} />
+                          <span className={`consultor-status-dot ${c.status === 'online' || c.status === 'in_call' ? 'online' : 'offline'}`} />
                         </div>
                         <div className="chat-list-item-info">
                           <span className="chat-list-item-title">{c.fullName}</span>
@@ -396,9 +396,9 @@ function ChatThread({
         </button>
         <span className="chat-toolbar-title">
           {conversation.peerName || 'Usuário'}
-          {conversation.peerRole === 'consultant' && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: conversation.peerStatus === 'online' ? '#2e7d5e' : '#8a9a92' }}>
-              {conversation.peerStatus === 'online' ? '● online' : '● offline'}
+          {(conversation.peerRole === 'consultant' || conversation.peerRole === 'user') && (
+            <span style={{ marginLeft: 8, fontSize: 12, color: (conversation.peerStatus === 'online' || conversation.peerStatus === 'in_call') ? '#2e7d5e' : '#8a9a92' }}>
+              {conversation.peerStatus === 'in_call' ? '● em chamada' : conversation.peerStatus === 'online' ? '● online' : '● offline'}
             </span>
           )}
         </span>

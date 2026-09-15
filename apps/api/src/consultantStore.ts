@@ -113,3 +113,10 @@ export async function setConsultantStatus(userId: string, status: ConsultantStat
     [status, userId],
   )
 }
+
+/** Após restart da API, ninguém está conectado — zera o status persistido. */
+export async function resetAllConsultantStatusesOffline(): Promise<void> {
+  await query(
+    `UPDATE consultant_profiles SET status = 'offline', updated_at = NOW() WHERE status <> 'offline'`,
+  )
+}

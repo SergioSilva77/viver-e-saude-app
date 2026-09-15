@@ -36,7 +36,7 @@ import {
   markRead as markConversationRead,
 } from './conversationStore.js'
 import { createServer } from 'node:http'
-import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser, listOnlineUserIds } from './realtime/wsServer.js'
+import { attachWebSocketServer, notifyDelivered, notifyRead, notifyUser, listOnlineUserIds, isUserOnline, livePresenceStatus } from './realtime/wsServer.js'
 import { generateTurnCredentials } from './turnCredentials.js'
 import { getCallLimitInfo } from './callStore.js'
 import {
@@ -1754,7 +1754,12 @@ const createConversationSchema = z.object({
 app.get('/api/conversations', requireAuth, async (req, res) => {
   try {
     const conversations = await listConversationsForUser(req.auth!.userId)
-    res.json({ conversations })
+    res.json({
+      conversations: conversations.map((c) => ({
+        ...c,
+        peerStatus: livePresenceStatus(c.peerId),
+      })),
+    })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Falha ao listar conversas.' })
   }
@@ -2259,7 +2264,7 @@ app.get('/api/consultants', requireAuth, async (req, res) => {
     const availableOnly = req.query.available === '1' || req.query.available === 'true'
     let consultants = await listConsultants()
     if (availableOnly) {
-      consultants = consultants.filter((c) => c.profile.status === 'online')
+      consultants = consultants.filter((c) => isUserOnline(c.userId))
     }
 
     res.json({
@@ -2269,7 +2274,7 @@ app.get('/api/consultants', requireAuth, async (req, res) => {
         photoUrl: c.photoUrl,
         specialty: c.profile.specialty,
         bio: c.profile.bio,
-        status: c.profile.status,
+        status: livePresenceStatus(c.userId),
       })),
     })
   } catch (error) {

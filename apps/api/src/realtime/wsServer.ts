@@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { getEffectivePlanId, type PlanId } from '@viver-saude/shared'
 import { verifyUserToken } from '../auth.js'
 import { findById } from '../userStore.js'
-import { setConsultantStatus } from '../consultantStore.js'
+import { setConsultantStatus, resetAllConsultantStatusesOffline } from '../consultantStore.js'
 import {
   getConversationById,
   isParticipant,
@@ -82,7 +82,7 @@ function toWire(message: ConversationMessage): ChatMessageWire {
 type ServerMessage =
   | { type: 'connected'; userId: string; role: string }
   | { type: 'pong'; ts: number }
-  | { type: 'presence'; userId: string; role: 'consultant'; status: 'online' | 'offline' | 'in_call' }
+  | { type: 'presence'; userId: string; role: 'user' | 'consultant'; status: 'online' | 'offline' | 'in_call' }
   | { type: 'chat:message'; message: ChatMessageWire }
   | { type: 'chat:ack'; clientId?: string; message: ChatMessageWire }
   | { type: 'chat:status'; conversationId: string; messageIds: string[]; status: 'delivered' | 'read' }
@@ -125,15 +125,34 @@ export function sendToUser(userId: string, message: ServerMessage): void {
   }
 }
 
+function pruneSockets(userId: string): void {
+  const set = connections.get(userId)
+  if (!set) return
+  for (const socket of [...set]) {
+    if (socket.ws.readyState !== WebSocket.OPEN) set.delete(socket)
+  }
+  if (set.size === 0) connections.delete(userId)
+}
+
 export function isUserOnline(userId: string): boolean {
+  pruneSockets(userId)
   return (connections.get(userId)?.size ?? 0) > 0
+}
+
+/** Presença ao vivo: só quem tem WebSocket aberto. */
+export function livePresenceStatus(userId: string): 'online' | 'offline' | 'in_call' {
+  if (!isUserOnline(userId)) return 'offline'
+  if (userActiveCall.has(userId)) return 'in_call'
+  return 'online'
 }
 
 /** IDs com pelo menos um socket aberto, opcionalmente filtrados por papel. */
 export function listOnlineUserIds(role?: 'user' | 'consultant'): string[] {
   const ids: string[] = []
-  for (const [userId, sockets] of connections) {
-    if (sockets.size === 0) continue
+  for (const userId of [...connections.keys()]) {
+    pruneSockets(userId)
+    const sockets = connections.get(userId)
+    if (!sockets || sockets.size === 0) continue
     const first = sockets.values().next().value as ConnectedSocket | undefined
     if (!first) continue
     if (role && first.role !== role) continue
@@ -208,14 +227,16 @@ export function notifyRead(conversationId: string, readMessages: { id: string; s
   }
 }
 
-async function handleConsultantOnline(userId: string): Promise<void> {
+async function handlePresenceOnline(userId: string, role: 'user' | 'consultant'): Promise<void> {
   const existingTimer = offlineTimers.get(userId)
   if (existingTimer) {
     clearTimeout(existingTimer)
     offlineTimers.delete(userId)
   }
-  await setConsultantStatus(userId, 'online')
-  broadcast({ type: 'presence', userId, role: 'consultant', status: 'online' })
+  if (role === 'consultant') {
+    await setConsultantStatus(userId, 'online')
+  }
+  broadcast({ type: 'presence', userId, role, status: 'online' })
 }
 
 /**
@@ -240,12 +261,13 @@ async function finalizeCall(callId: string, status: 'ended' | 'rejected' | 'canc
     }
   }
 
-  // Se algum dos participantes é consultor "em chamada", libera para online.
+  // Se algum dos participantes é consultor, devolve o status conforme a conexão real.
   for (const participantId of [updated.callerId, updated.calleeId]) {
     const participant = await findById(participantId)
     if (participant?.role === 'consultant') {
-      await setConsultantStatus(participantId, 'online')
-      broadcast({ type: 'presence', userId: participantId, role: 'consultant', status: 'online' })
+      const status = isUserOnline(participantId) ? 'online' : 'offline'
+      await setConsultantStatus(participantId, status)
+      broadcast({ type: 'presence', userId: participantId, role: 'consultant', status })
     }
   }
 
@@ -277,16 +299,19 @@ function scheduleCallLimitTimers(callId: string, remainingSeconds: number): void
   }, remainingSeconds * 1000)
 }
 
-function scheduleConsultantOffline(userId: string): void {
+function schedulePresenceOffline(userId: string, role: 'user' | 'consultant'): void {
+  const existing = offlineTimers.get(userId)
+  if (existing) clearTimeout(existing)
   const timer = setTimeout(async () => {
     offlineTimers.delete(userId)
-    // Só marca offline se realmente não há mais nenhuma conexão desse usuário
     if (isUserOnline(userId)) return
     try {
-      await setConsultantStatus(userId, 'offline')
-      broadcast({ type: 'presence', userId, role: 'consultant', status: 'offline' })
+      if (role === 'consultant') {
+        await setConsultantStatus(userId, 'offline')
+      }
+      broadcast({ type: 'presence', userId, role, status: 'offline' })
     } catch (err) {
-      console.error('[WS] Erro ao marcar consultor offline:', err)
+      console.error('[WS] Erro ao marcar presença offline:', err)
     }
   }, OFFLINE_DEBOUNCE_MS)
   offlineTimers.set(userId, timer)
@@ -294,6 +319,28 @@ function scheduleConsultantOffline(userId: string): void {
 
 export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
+
+  void resetAllConsultantStatusesOffline().catch((err) => {
+    console.error('[WS] Falha ao zerar presença dos consultores no boot:', err)
+  })
+
+  const heartbeatMs = 25_000
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      const alive = (ws as WebSocket & { isAlive?: boolean }).isAlive
+      if (alive === false) {
+        ws.terminate()
+        continue
+      }
+      ;(ws as WebSocket & { isAlive?: boolean }).isAlive = false
+      try {
+        ws.ping()
+      } catch {
+        ws.terminate()
+      }
+    }
+  }, heartbeatMs)
+  wss.on('close', () => clearInterval(heartbeat))
 
   wss.on('connection', async (ws, req) => {
     // Pausa o processamento de frames entrantes até terminarmos a autenticação
@@ -320,11 +367,15 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
       const socket: ConnectedSocket = { ws, userId: user.id, role: payload.role }
       if (!connections.has(user.id)) connections.set(user.id, new Set())
       connections.get(user.id)!.add(socket)
+      ;(ws as WebSocket & { isAlive?: boolean }).isAlive = true
+      ws.on('pong', () => {
+        ;(ws as WebSocket & { isAlive?: boolean }).isAlive = true
+      })
 
       console.log(`[WS] Conectado: userId=${user.id} role=${payload.role} (total ${connections.get(user.id)!.size} conexões)`)
 
-      if (payload.role === 'consultant') {
-        await handleConsultantOnline(user.id)
+      if (payload.role === 'consultant' || payload.role === 'user') {
+        await handlePresenceOnline(user.id, payload.role)
       }
 
       // Mensagens que chegaram enquanto este usuário estava offline agora
@@ -602,8 +653,8 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
           if (set.size === 0) connections.delete(user.id)
         }
         console.log(`[WS] Desconectado: userId=${user.id} role=${payload.role}`)
-        if (payload.role === 'consultant' && !isUserOnline(user.id)) {
-          scheduleConsultantOffline(user.id)
+        if (!isUserOnline(user.id)) {
+          schedulePresenceOffline(user.id, payload.role)
         }
         // Se o usuário caiu no meio de uma chamada e não há outra conexão dele
         // ativa (multi-dispositivo), encerra a chamada como se tivesse desligado.

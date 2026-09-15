@@ -22,6 +22,7 @@ class RealtimeServiceImpl {
   private currentToken: string | null = null
   private manuallyClosed = true
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private pingTimer: ReturnType<typeof setInterval> | null = null
   private statusListeners = new Set<StatusListener>()
   private messageListeners = new Set<MessageListener>()
   private pendingQueue: RealtimeMessage[] = []
@@ -114,6 +115,8 @@ class RealtimeServiceImpl {
     this.manuallyClosed = true
     this.currentToken = null
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    this.pingTimer = null
     this.socket?.close()
     this.socket = null
     this.pendingQueue = []
@@ -124,6 +127,15 @@ class RealtimeServiceImpl {
     if (this.status === value) return
     this.status = value
     this.statusListeners.forEach((listener) => listener(value))
+    if (value === 'connected') {
+      if (this.pingTimer) clearInterval(this.pingTimer)
+      this.pingTimer = setInterval(() => {
+        this.send({ type: 'ping' })
+      }, 25_000)
+    } else if (this.pingTimer) {
+      clearInterval(this.pingTimer)
+      this.pingTimer = null
+    }
   }
 }
 
