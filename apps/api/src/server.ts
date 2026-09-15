@@ -1754,6 +1754,7 @@ const createConversationSchema = z.object({
 app.get('/api/conversations', requireAuth, async (req, res) => {
   try {
     const conversations = await listConversationsForUser(req.auth!.userId)
+    res.setHeader('Cache-Control', 'no-store')
     res.json({
       conversations: conversations.map((c) => ({
         ...c,

@@ -157,7 +157,9 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                   ) : (
                     <div className="consultor-avatar-fallback">{(c.peerName || '?').charAt(0).toUpperCase()}</div>
                   )}
-                  <span className={`consultor-status-dot ${c.peerStatus === 'online' || c.peerStatus === 'in_call' ? 'online' : 'offline'}`} />
+                  {(c.peerStatus === 'online' || c.peerStatus === 'in_call') && (
+                    <span className="consultor-status-dot online" />
+                  )}
                 </div>
                 <div className="chat-list-item-info">
                   <span className="chat-list-item-title">{c.peerName || 'Usuário'}</span>
@@ -233,7 +235,9 @@ export function ConsultorSection({ token, selfId, role, planIds = [] }: Props) {
                           ) : (
                             <div className="consultor-avatar-fallback">{c.fullName.charAt(0).toUpperCase()}</div>
                           )}
-                          <span className={`consultor-status-dot ${c.status === 'online' || c.status === 'in_call' ? 'online' : 'offline'}`} />
+                          {(c.status === 'online' || c.status === 'in_call') && (
+                            <span className="consultor-status-dot online" />
+                          )}
                         </div>
                         <div className="chat-list-item-info">
                           <span className="chat-list-item-title">{c.fullName}</span>
@@ -396,9 +400,9 @@ function ChatThread({
         </button>
         <span className="chat-toolbar-title">
           {conversation.peerName || 'Usuário'}
-          {(conversation.peerRole === 'consultant' || conversation.peerRole === 'user') && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: (conversation.peerStatus === 'online' || conversation.peerStatus === 'in_call') ? '#2e7d5e' : '#8a9a92' }}>
-              {conversation.peerStatus === 'in_call' ? '● em chamada' : conversation.peerStatus === 'online' ? '● online' : '● offline'}
+          {(conversation.peerStatus === 'online' || conversation.peerStatus === 'in_call') && (
+            <span style={{ marginLeft: 8, fontSize: 12, color: '#2e7d5e' }}>
+              {conversation.peerStatus === 'in_call' ? '● em chamada' : '● online'}
             </span>
           )}
         </span>
