@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   createChat,
   deleteChat,
@@ -465,7 +466,18 @@ export function MeuGuardiao({ userProfile, userId, userEmail, onViewPlans }: Pro
           <div key={msg.id} className={`chat-message ${msg.role === 'user' ? 'user' : 'ai'}`}>
             {msg.role === 'assistant' ? (
               <div className="chat-markdown">
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    table: ({ children }) => (
+                      <div className="chat-markdown-table-wrap">
+                        <table>{children}</table>
+                      </div>
+                    ),
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
               </div>
             ) : (
               msg.content
