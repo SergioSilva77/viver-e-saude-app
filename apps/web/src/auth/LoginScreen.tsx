@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { plans } from '@viver-saude/shared'
+import { plans, type PlanId } from '@viver-saude/shared'
 import { saveSession } from './sessionTypes'
 import { authenticateWithGoogle, devAuthenticate } from './devAuth'
 import { loadGoogleIdentity, signInWithGooglePopup } from './googleSignIn'
 import { realtimeService } from '../realtime/realtimeService'
-import type { PlanId } from '@viver-saude/shared'
+import { APP_VERSION } from '../appVersion'
 
 type SubscribeState = 'idle' | 'loading' | 'error'
 type OverlayStep = 'plans' | 'user-info'
@@ -409,6 +409,8 @@ export function LoginScreen({ onLogin, onSubscribe, successMessage, prefilledEma
           </button>
         </div>
       )}
+
+      <p className="app-version app-version-on-login">Versão {APP_VERSION}</p>
 
       {overlayVisible && (
         <div

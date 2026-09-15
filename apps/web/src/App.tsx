@@ -74,6 +74,7 @@ import { CallOverlay } from './consultor/CallOverlay'
 import { callManager } from './consultor/callManager'
 import { NotificationBell } from './notifications/NotificationBell'
 import { notificationCenter } from './notifications/notificationCenter'
+import { APP_VERSION } from './appVersion'
 import './App.css'
 
 const planIcons = ['bi-seedling', 'bi-heart-pulse', 'bi-stars']
@@ -1155,7 +1156,8 @@ function App() {
 
         {/* CONTA */}
         {activeSection === 'conta' && (
-          isLocked ? (
+          <>
+          {isLocked ? (
             <LockedSection section="conta" onViewPlans={goToPlans}>
               <ContaPreview />
             </LockedSection>
@@ -1362,7 +1364,9 @@ function App() {
                 )}
               </div>
             </>
-          )
+          )}
+          <p className="app-version">Versão {APP_VERSION}</p>
+          </>
         )}
       </div>
 

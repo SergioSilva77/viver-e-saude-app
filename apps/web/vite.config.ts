@@ -158,7 +158,15 @@ function devStorePlugin(): Plugin {
 
 // ── Vite config ────────────────────────────────────────────
 
+function readAppVersion(): string {
+  const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')) as { version: string }
+  return pkg.version
+}
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(readAppVersion()),
+  },
   plugins: [react(), devStorePlugin()],
   resolve: {
     alias: {
